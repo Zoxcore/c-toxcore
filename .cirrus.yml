@@ -22,3 +22,4 @@ cirrus-ci_task:
     - cd -
   test_all_script:
     - bazel test -c opt -k //c-toxcore/...
+
