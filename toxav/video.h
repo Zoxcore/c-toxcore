@@ -157,6 +157,7 @@ typedef struct VCSession_s {
 
 // ------ ffmpeg encoder ------
     AVCodecContext *h264_encoder2;
+    AVPacket *h264_out_pic2;
 // ------ ffmpeg encoder ------
 
 
