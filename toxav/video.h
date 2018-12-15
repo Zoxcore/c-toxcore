@@ -57,10 +57,10 @@ VPX_DL_GOOD_QUALITY   (1000000) deadline parameter analogous to VPx GOOD QUALITY
 VPX_DL_BEST_QUALITY   (0)       deadline parameter analogous to VPx BEST QUALITY mode.
 */
 
-#define AV_BUFFERING_DELTA_MS 100
+#define AV_BUFFERING_DELTA_MS 10
 #define AV_BUFFERING_MS_MIN 2
 #define AV_BUFFERING_MS_MAX 800
-#define MIN_AV_BUFFERING_MS 250
+#define MIN_AV_BUFFERING_MS 90
 
 typedef enum PACKET_TOXAV_COMM_CHANNEL_FUNCTION {
     PACKET_TOXAV_COMM_CHANNEL_REQUEST_KEYFRAME = 0,
@@ -154,6 +154,12 @@ typedef struct VCSession_s {
     int h264_enc_width;
     int h264_enc_height;
     uint32_t h264_enc_bitrate;
+
+// ------ ffmpeg encoder ------
+    AVCodecContext *h264_encoder2;
+    AVPacket *h264_out_pic2;
+// ------ ffmpeg encoder ------
+
 
 #ifdef RASPBERRY_PI_OMX
     struct OMXContext *omx_ctx;
