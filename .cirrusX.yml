@@ -12,6 +12,15 @@ cirrus-ci_task:
         libcv-dev
         libhighgui-dev
         libopenal-dev
+        libx264-dev
+        ffmpeg
+        libavcodec-dev
+        libavfilter-dev
+        libavformat-dev
+        libavutil-dev
+        libswscale-dev
+        libxcb-xfixes0-dev
+        
     - echo "build --jobs=50 --curses=no --verbose_failures" | sudo tee /etc/bazel.bazelrc
     - echo "build --config=linux" | sudo tee -a /etc/bazel.bazelrc
     - echo "build --config=gcc" | sudo tee -a /etc/bazel.bazelrc
@@ -22,3 +31,4 @@ cirrus-ci_task:
     - cd -
   test_all_script:
     - bazel test -c opt -k //c-toxcore/...
+
