@@ -100,6 +100,8 @@ VCSession *vc_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t f
     vc->video_play_delay = 0;
     vc->video_play_delay_real = 0;
     vc->video_frame_buffer_entries = 0;
+    vc->parsed_h264_sps_profile_i = 0;
+    vc->parsed_h264_sps_level_i = 0;
     vc->last_sent_keyframe_ts = 0;
 
     vc->last_incoming_frame_ts = 0;
@@ -918,6 +920,16 @@ int vc_queue_message(Mono_Time *mono_time, void *vcp, struct RTPMessage *msg)
                     vc->av->call_comm_cb(vc->av, vc->friend_number,
                                          TOXAV_CALL_COMM_PLAY_BUFFER_ENTRIES,
                                          (int64_t)vc->video_frame_buffer_entries,
+                                         vc->av->call_comm_cb_user_data);
+
+                    vc->av->call_comm_cb(vc->av, vc->friend_number,
+                                         TOXAV_CALL_COMM_DECODER_H264_PROFILE,
+                                         (int64_t)vc->parsed_h264_sps_profile_i,
+                                         vc->av->call_comm_cb_user_data);
+
+                    vc->av->call_comm_cb(vc->av, vc->friend_number,
+                                         TOXAV_CALL_COMM_DECODER_H264_LEVEL,
+                                         (int64_t)vc->parsed_h264_sps_level_i,
                                          vc->av->call_comm_cb_user_data);
 
                     if (vc->incoming_video_frames_gap_ms_mean_value == 0) {
