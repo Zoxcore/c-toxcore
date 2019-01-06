@@ -103,6 +103,7 @@ VCSession *vc_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t f
     vc->last_sent_keyframe_ts = 0;
 
     vc->last_incoming_frame_ts = 0;
+    vc->last_parsed_h264_sps_ts = 0;
     vc->timestamp_difference_to_sender = 0;
     vc->timestamp_difference_adjustment = -450;
     vc->tsb_range_ms = 60;
