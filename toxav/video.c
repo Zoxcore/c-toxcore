@@ -115,7 +115,7 @@ VCSession *vc_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t f
     vc->incoming_video_bitrate_last_cb_ts = 0;
     vc->last_requested_lower_fps_ts = 0;
     vc->encoder_frame_has_record_timestamp = 1;
-    vc->video_max_bitrate = VIDEO_BITRATE_MAX_AUTO_VALUE_H264; // HINT: should probably be set to a higher value
+    vc->video_max_bitrate = VIDEO_BITRATE_MAX_AUTO_VALUE_H264;
     vc->video_decoder_buffer_ms = MIN_AV_BUFFERING_MS;
     vc->video_decoder_adjustment_base_ms = MIN_AV_BUFFERING_MS - AV_BUFFERING_DELTA_MS;
     vc->client_video_capture_delay_ms = 0;
