@@ -100,9 +100,12 @@ VCSession *vc_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t f
     vc->video_play_delay = 0;
     vc->video_play_delay_real = 0;
     vc->video_frame_buffer_entries = 0;
+    vc->parsed_h264_sps_profile_i = 0;
+    vc->parsed_h264_sps_level_i = 0;
     vc->last_sent_keyframe_ts = 0;
 
     vc->last_incoming_frame_ts = 0;
+    vc->last_parsed_h264_sps_ts = 0;
     vc->timestamp_difference_to_sender = 0;
     vc->timestamp_difference_adjustment = -450;
     vc->tsb_range_ms = 60;
@@ -112,7 +115,7 @@ VCSession *vc_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t f
     vc->incoming_video_bitrate_last_cb_ts = 0;
     vc->last_requested_lower_fps_ts = 0;
     vc->encoder_frame_has_record_timestamp = 1;
-    vc->video_max_bitrate = VIDEO_BITRATE_MAX_AUTO_VALUE_H264; // HINT: should probably be set to a higher value
+    vc->video_max_bitrate = VIDEO_BITRATE_MAX_AUTO_VALUE_H264;
     vc->video_decoder_buffer_ms = MIN_AV_BUFFERING_MS;
     vc->video_decoder_adjustment_base_ms = MIN_AV_BUFFERING_MS - AV_BUFFERING_DELTA_MS;
     vc->client_video_capture_delay_ms = 0;
@@ -917,6 +920,16 @@ int vc_queue_message(Mono_Time *mono_time, void *vcp, struct RTPMessage *msg)
                     vc->av->call_comm_cb(vc->av, vc->friend_number,
                                          TOXAV_CALL_COMM_PLAY_BUFFER_ENTRIES,
                                          (int64_t)vc->video_frame_buffer_entries,
+                                         vc->av->call_comm_cb_user_data);
+
+                    vc->av->call_comm_cb(vc->av, vc->friend_number,
+                                         TOXAV_CALL_COMM_DECODER_H264_PROFILE,
+                                         (int64_t)vc->parsed_h264_sps_profile_i,
+                                         vc->av->call_comm_cb_user_data);
+
+                    vc->av->call_comm_cb(vc->av, vc->friend_number,
+                                         TOXAV_CALL_COMM_DECODER_H264_LEVEL,
+                                         (int64_t)vc->parsed_h264_sps_level_i,
                                          vc->av->call_comm_cb_user_data);
 
                     if (vc->incoming_video_frames_gap_ms_mean_value == 0) {
