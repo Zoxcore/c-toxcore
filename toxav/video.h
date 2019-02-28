@@ -39,11 +39,11 @@
 #include <vpx/vp8dx.h>
 // for VPX ----------
 
-// for openH264 ----------
+// for H264 ----------
 #include <x264.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/common.h>
-// for openH264 ----------
+// for H264 ----------
 
 #define USE_TS_BUFFER_FOR_VIDEO   1
 
@@ -57,10 +57,19 @@ VPX_DL_GOOD_QUALITY   (1000000) deadline parameter analogous to VPx GOOD QUALITY
 VPX_DL_BEST_QUALITY   (0)       deadline parameter analogous to VPx BEST QUALITY mode.
 */
 
-#define AV_BUFFERING_DELTA_MS 100
 #define AV_BUFFERING_MS_MIN 2
 #define AV_BUFFERING_MS_MAX 800
-#define MIN_AV_BUFFERING_MS 250
+#define MIN_AV_BUFFERING_MS 82
+#define AV_BUFFERING_DELTA_MS 1
+
+#ifdef HW_CODEC_CONFIG_RPI3_TBW_TV
+// more buffering for TV usecase
+#undef MIN_AV_BUFFERING_MS
+#undef AV_BUFFERING_DELTA_MS
+#define MIN_AV_BUFFERING_MS 300
+#define AV_BUFFERING_DELTA_MS 5
+#endif
+
 
 typedef enum PACKET_TOXAV_COMM_CHANNEL_FUNCTION {
     PACKET_TOXAV_COMM_CHANNEL_REQUEST_KEYFRAME = 0,
@@ -155,6 +164,12 @@ typedef struct VCSession_s {
     int h264_enc_height;
     uint32_t h264_enc_bitrate;
 
+// ------ ffmpeg encoder ------
+    AVCodecContext *h264_encoder2;
+    AVPacket *h264_out_pic2;
+// ------ ffmpeg encoder ------
+
+
 #ifdef RASPBERRY_PI_OMX
     struct OMXContext *omx_ctx;
 #endif
@@ -204,6 +219,10 @@ typedef struct VCSession_s {
     int32_t video_play_delay_real;
     uint32_t video_frame_buffer_entries;
     uint64_t last_incoming_frame_ts;
+    uint64_t last_parsed_h264_sps_ts;
+    uint32_t parsed_h264_sps_profile_i;
+    uint32_t parsed_h264_sps_level_i;
+    uint32_t video_incoming_frame_orientation;
 
     uint32_t dummy_ntp_local_start;
     uint32_t dummy_ntp_local_end;
@@ -235,6 +254,7 @@ typedef struct VCSession_s {
     int32_t video_decoder_adjustment_base_ms;
     int32_t client_video_capture_delay_ms;
     int32_t remote_client_video_capture_delay_ms;
+    int32_t video_encoder_frame_orientation_angle;
     // options ---
 
     void *vpx_frames_buf_list[VIDEO_MAX_FRAGMENT_BUFFER_COUNT];

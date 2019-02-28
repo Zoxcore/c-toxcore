@@ -322,6 +322,9 @@ typedef enum TOXAV_CALL_COMM_INFO {
     TOXAV_CALL_COMM_PLAY_BUFFER_ENTRIES = 9,
     TOXAV_CALL_COMM_INCOMING_FPS = 10,
     TOXAV_CALL_COMM_REMOTE_RECORD_DELAY = 11,
+    TOXAV_CALL_COMM_DECODER_H264_PROFILE = 12,
+    TOXAV_CALL_COMM_DECODER_H264_LEVEL = 13,
+    TOXAV_CALL_COMM_PLAY_VIDEO_ORIENTATION = 14,
 } TOXAV_CALL_COMM_INFO;
 
 
@@ -730,6 +733,9 @@ bool toxav_video_send_frame(ToxAV *av, uint32_t friend_number, uint16_t width, u
                             const uint8_t *u, const uint8_t *v, TOXAV_ERR_SEND_FRAME *error);
 
 
+bool toxav_video_send_frame_h264(ToxAV *av, uint32_t friend_number, uint16_t width, uint16_t height, const uint8_t *buf,
+                                 uint32_t data_len, TOXAV_ERR_SEND_FRAME *error);
+
 
 /**
  * The function type for the video_bit_rate callback. The event is triggered
@@ -917,6 +923,13 @@ typedef enum TOXAV_ENCODER_KF_METHOD_VALUE {
     TOXAV_ENCODER_KF_METHOD_PATTERN = 1,
 } TOXAV_ENCODER_KF_METHOD_VALUE;
 
+typedef enum TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION_VALUE {
+    TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION_0 = 0,
+    TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION_90 = 1,
+    TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION_180 = 2,
+    TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION_270 = 3,
+} TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION_VALUE;
+
 
 typedef enum TOXAV_OPTIONS_OPTION {
     TOXAV_ENCODER_CPU_USED = 0,
@@ -934,6 +947,7 @@ typedef enum TOXAV_OPTIONS_OPTION {
     TOXAV_ENCODER_VIDEO_MAX_BITRATE = 12,
     TOXAV_DECODER_VIDEO_BUFFER_MS = 13,
     TOXAV_CLIENT_VIDEO_CAPTURE_DELAY_MS = 14,
+    TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION = 15,
 } TOXAV_OPTIONS_OPTION;
 
 

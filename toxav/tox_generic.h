@@ -22,7 +22,6 @@
 #define DISABLE_H264_DECODER_FEATURE    0
 
 // H264 settings -----------
-#define x264_param_profile_str "high"
 #define VIDEO_BITRATE_INITIAL_VALUE_H264 1500
 #define VIDEO_BITRATE_MIN_AUTO_VALUE_H264 95
 #define VIDEO_BITRATE_SCALAR_AUTO_VALUE_H264 1400
@@ -32,6 +31,12 @@
 #define VIDEO_BITRATE_SCALAR3_AUTO_VALUE_H264 7000
 #define VIDEO_BITRATE_MAX_AUTO_VALUE_H264 8000
 
+#ifdef HW_CODEC_CONFIG_RPI3_TBW_BIDI
+    // lower max video bitrate on ToxPhone
+    #undef VIDEO_BITRATE_MAX_AUTO_VALUE_H264
+    #define VIDEO_BITRATE_MAX_AUTO_VALUE_H264 3100
+#endif
+
 // -- these control how agressive the bandwidth control is --
 #define VIDEO_BITRATE_AUTO_INC_THRESHOLD 1.7 // threshold loss % to increase bitrate (in %/100)
 #define VIDEO_BITRATE_AUTO_DEC_THRESHOLD 5.1 // threshold loss % to lower the bitrate (in %/100)
@@ -39,9 +44,9 @@
 #define VIDEO_BITRATE_AUTO_DEC_FACTOR 0.93 // (in %/100)
 // -- these control how agressive the bandwidth control is --
 
-#define VIDEO_MAX_KF_H264 150
+#define VIDEO_MAX_KF_H264 200
 #define VIDEO_BUF_FACTOR_H264 1
-#define VIDEO_F_RATE_TOLERANCE_H264 1.2
+#define VIDEO_F_RATE_TOLERANCE_H264 1.3
 #define VIDEO_BITRATE_FACTOR_H264 0.7
 // H264 settings -----------
 

@@ -73,6 +73,7 @@ VCSession *vc_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t f
     vc->video_rc_min_quantizer = TOXAV_ENCODER_VP8_RC_MIN_QUANTIZER_NORMAL;
     vc->video_rc_min_quantizer_prev = vc->video_rc_min_quantizer;
     vc->video_encoder_coded_used = TOXAV_ENCODER_CODEC_USED_VP8; // DEFAULT: VP8 !!
+    vc->video_encoder_frame_orientation_angle = TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION_0;
     vc->video_encoder_coded_used_prev = vc->video_encoder_coded_used;
 #ifdef RASPBERRY_PI_OMX
     vc->video_encoder_coded_used_hw_accel = TOXAV_ENCODER_CODEC_HW_ACCEL_OMX_PI;
@@ -100,9 +101,13 @@ VCSession *vc_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t f
     vc->video_play_delay = 0;
     vc->video_play_delay_real = 0;
     vc->video_frame_buffer_entries = 0;
+    vc->parsed_h264_sps_profile_i = 0;
+    vc->parsed_h264_sps_level_i = 0;
     vc->last_sent_keyframe_ts = 0;
+    vc->video_incoming_frame_orientation = TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION_0;
 
     vc->last_incoming_frame_ts = 0;
+    vc->last_parsed_h264_sps_ts = 0;
     vc->timestamp_difference_to_sender = 0;
     vc->timestamp_difference_adjustment = -450;
     vc->tsb_range_ms = 60;
@@ -112,7 +117,7 @@ VCSession *vc_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t f
     vc->incoming_video_bitrate_last_cb_ts = 0;
     vc->last_requested_lower_fps_ts = 0;
     vc->encoder_frame_has_record_timestamp = 1;
-    vc->video_max_bitrate = VIDEO_BITRATE_MAX_AUTO_VALUE_H264; // HINT: should probably be set to a higher value
+    vc->video_max_bitrate = VIDEO_BITRATE_MAX_AUTO_VALUE_H264;
     vc->video_decoder_buffer_ms = MIN_AV_BUFFERING_MS;
     vc->video_decoder_adjustment_base_ms = MIN_AV_BUFFERING_MS - AV_BUFFERING_DELTA_MS;
     vc->client_video_capture_delay_ms = 0;
@@ -194,6 +199,7 @@ BASE_CLEANUP:
     pthread_mutex_destroy(vc->queue_mutex);
 
 #ifdef USE_TS_BUFFER_FOR_VIDEO
+    tsb_drain((TSBuffer *)vc->vbuf_raw);
     tsb_kill((TSBuffer *)vc->vbuf_raw);
 #else
     rb_kill((RingBuffer *)vc->vbuf_raw);
@@ -516,6 +522,21 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
 
         data_type = (uint8_t)((frame_flags & RTP_KEY_FRAME) != 0);
         h264_encoded_video_frame = (uint8_t)((frame_flags & RTP_ENCODER_IS_H264) != 0);
+
+        uint8_t video_orientation_bit0 = (uint8_t)((frame_flags & RTP_ENCODER_VIDEO_ROTATION_ANGLE_BIT0) != 0);
+        uint8_t video_orientation_bit1 = (uint8_t)((frame_flags & RTP_ENCODER_VIDEO_ROTATION_ANGLE_BIT1) != 0);
+
+        // LOGGER_WARNING(vc->log, "FRAMEFLAGS:%d", (int)frame_flags);
+
+        if ((video_orientation_bit0 == 0) && (video_orientation_bit1 == 0)) {
+            vc->video_incoming_frame_orientation = TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION_0;
+        } else if ((video_orientation_bit0 == 1) && (video_orientation_bit1 == 0)) {
+            vc->video_incoming_frame_orientation = TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION_90;
+        } else if ((video_orientation_bit0 == 0) && (video_orientation_bit1 == 1)) {
+            vc->video_incoming_frame_orientation = TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION_180;
+        } else if ((video_orientation_bit0 == 1) && (video_orientation_bit1 == 1)) {
+            vc->video_incoming_frame_orientation = TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION_270;
+        }
 
         bwc_add_recv(bwc, header_v3_0->data_length_full);
 
@@ -916,6 +937,21 @@ int vc_queue_message(Mono_Time *mono_time, void *vcp, struct RTPMessage *msg)
                     vc->av->call_comm_cb(vc->av, vc->friend_number,
                                          TOXAV_CALL_COMM_PLAY_BUFFER_ENTRIES,
                                          (int64_t)vc->video_frame_buffer_entries,
+                                         vc->av->call_comm_cb_user_data);
+
+                    vc->av->call_comm_cb(vc->av, vc->friend_number,
+                                         TOXAV_CALL_COMM_DECODER_H264_PROFILE,
+                                         (int64_t)vc->parsed_h264_sps_profile_i,
+                                         vc->av->call_comm_cb_user_data);
+
+                    vc->av->call_comm_cb(vc->av, vc->friend_number,
+                                         TOXAV_CALL_COMM_DECODER_H264_LEVEL,
+                                         (int64_t)vc->parsed_h264_sps_level_i,
+                                         vc->av->call_comm_cb_user_data);
+
+                    vc->av->call_comm_cb(vc->av, vc->friend_number,
+                                         TOXAV_CALL_COMM_PLAY_VIDEO_ORIENTATION,
+                                         (int64_t)vc->video_incoming_frame_orientation,
                                          vc->av->call_comm_cb_user_data);
 
                     if (vc->incoming_video_frames_gap_ms_mean_value == 0) {

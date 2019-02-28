@@ -42,12 +42,6 @@
 #define DISABLE_H264_ENCODER_FEATURE    0
 
 
-/**
- * The number of milliseconds we want to keep a keyframe in the buffer for,
- * even though there are no free slots for incoming frames.
- */
-#define VIDEO_KEEP_KEYFRAME_IN_BUFFER_FOR_MS 20
-
 int TOXAV_SEND_VIDEO_LOSSLESS_PACKETS = 0;
 
 
@@ -156,17 +150,6 @@ static int8_t get_slot(Logger *log, struct RTPWorkBufferList *wkbl, bool is_keyf
         if (wkbl->next_free_entry > 0) {
             // Get the most recently filled slot.
             const struct RTPWorkBuffer *slot = &wkbl->work_buffer[wkbl->next_free_entry - 1];
-
-#if 0
-
-            // If the incoming packet is older than our newest slot, drop it.
-            // This is the first situation in the above diagram.
-            if (slot->buf->header.timestamp > header->timestamp) {
-                LOGGER_DEBUG(log, "get_slot:workbuffer:2:timestamp too old");
-                return GET_SLOT_RESULT_DROP_INCOMING;
-            }
-
-#endif
         }
 
         // Not all slots are filled, and the packet is newer than our most
@@ -175,56 +158,6 @@ static int8_t get_slot(Logger *log, struct RTPWorkBufferList *wkbl, bool is_keyf
         LOGGER_DEBUG(log, "get_slot:slot=%d", (int)wkbl->next_free_entry);
         return wkbl->next_free_entry;
     }
-
-#if 0
-
-    // If the incoming frame is a key frame, then stop assembling the oldest
-    // slot, regardless of whether there was a keyframe in that or not.
-    if (is_keyframe) {
-        LOGGER_DEBUG(log, "get_slot:is_keyframe:ret=%d", (int)GET_SLOT_RESULT_DROP_OLDEST_SLOT);
-        return GET_SLOT_RESULT_DROP_OLDEST_SLOT;
-    }
-
-#endif
-
-    // The incoming slot is not a key frame, so we look at slot 0 to see what to
-    // do next.
-    const struct RTPWorkBuffer *slot = &wkbl->work_buffer[0];
-
-#if 0
-
-    // The incoming frame is not a key frame, but the existing slot 0 is also
-    // not a keyframe, so we stop assembling the existing frame and make space
-    // for the new one.
-    if (!slot->is_keyframe) {
-        LOGGER_DEBUG(log, "get_slot:NOT is_keyframe:ret=%d", (int)GET_SLOT_RESULT_DROP_OLDEST_SLOT);
-        return GET_SLOT_RESULT_DROP_OLDEST_SLOT;
-    }
-
-    // If this key frame is fully received, we also stop assembling and clear
-    // slot 0.  This also means sending the frame to the decoder.
-    if (slot->received_len == slot->buf->header.data_length_full) {
-        LOGGER_DEBUG(log, "get_slot:recv len == data length full:ret=%d", (int)GET_SLOT_RESULT_DROP_OLDEST_SLOT);
-        return GET_SLOT_RESULT_DROP_OLDEST_SLOT;
-    }
-
-    // This is a key frame, not fully received yet, but it's already much older
-    // than the incoming frame, so we stop assembling it and send whatever part
-    // we did receive to the decoder.
-    if (slot->buf->header.timestamp + VIDEO_KEEP_KEYFRAME_IN_BUFFER_FOR_MS <= header->timestamp) {
-        LOGGER_DEBUG(log, "get_slot:This is a key frame, not fully received yet:ret=%d", (int)GET_SLOT_RESULT_DROP_OLDEST_SLOT);
-        return GET_SLOT_RESULT_DROP_OLDEST_SLOT;
-    }
-
-#endif
-
-#if 0
-    // This is a key frame, it's not too old yet, so we keep it in its slot for
-    // a little longer.
-    LOGGER_DEBUG(log, "keep KEYFRAME in workbuffer:GET_SLOT_RESULT_DROP_INCOMING:ret=%d",
-                 (int)GET_SLOT_RESULT_DROP_INCOMING);
-    return GET_SLOT_RESULT_DROP_INCOMING;
-#endif
 
     return GET_SLOT_RESULT_DROP_OLDEST_SLOT;
 }
@@ -248,17 +181,6 @@ static struct RTPMessage *process_frame(Logger *log, struct RTPWorkBufferList *w
         LOGGER_DEBUG(log, "process_frame:workbuffer empty");
         return NULL;
     }
-
-#if 0
-
-    // Slot 0 contains a key frame, slot_id points at an interframe that is
-    // relative to that key frame, so we don't use it yet.
-    if (wkbl->work_buffer[0].is_keyframe && slot_id != 0) {
-        LOGGER_DEBUG(log, "process_frame:KEYFRAME waiting in slot 0");
-        return NULL;
-    }
-
-#endif
 
     // Either slot_id is 0 and slot 0 is a key frame, or there is no key frame
     // in slot 0 (and slot_id is anything).
@@ -380,23 +302,6 @@ static bool fill_data_into_slot(Logger *log, struct RTPWorkBufferList *wkbl, con
     return slot->received_len == header->data_length_full;
 }
 
-#if 0
-static void update_bwc_values(Logger *log, RTPSession *session, const struct RTPMessage *msg)
-{
-    if (session->first_packets_counter < DISMISS_FIRST_LOST_VIDEO_PACKET_COUNT) {
-        ++session->first_packets_counter;
-    } else {
-        uint32_t data_length_full = msg->header.data_length_full; // without header
-        uint32_t received_length_full = msg->header.received_length_full; // without header
-        bwc_add_recv(session->bwc, data_length_full);
-
-        if (received_length_full < data_length_full) {
-            LOGGER_DEBUG(log, "BWC: full length=%u received length=%d", data_length_full, received_length_full);
-            bwc_add_lost_v3(session->bwc, (data_length_full - received_length_full), false);
-        }
-    }
-}
-#endif
 
 /**
  * Handle a single RTP video packet.
@@ -873,6 +778,39 @@ static int handle_rtp_packet(Messenger *m, uint32_t friendnumber, const uint8_t 
     }
 
 
+    /*
+     * just process any incoming audio packets ----
+     */
+    if (header.data_length_lower == length - RTP_HEADER_SIZE) {
+        /* The message is sent in single part */
+
+        /*
+         *   session->mcb == vc_queue_message() // this function is called from here
+         *   session->mp == struct RTPMessage *
+         *   session->cs == call->video.second // == VCSession created by vc_new() call
+         */
+
+        session->rsequnum = header.sequnum;
+        session->rtimestamp = header.timestamp;
+
+        LOGGER_DEBUG(m->log, "RTP: AUDIO singlepart message: len=%d seqnum=%d",
+                     length, header.sequnum);
+
+        return session->mcb(session->m->mono_time, session->cs, new_message(&header, length - RTP_HEADER_SIZE,
+                            data + RTP_HEADER_SIZE, length - RTP_HEADER_SIZE));
+
+    }
+
+    /*
+     * just process any incoming audio packets ----
+     */
+
+
+    LOGGER_DEBUG(m->log, "RTP: AUDIO multipart message");
+
+
+
+
     if (header.data_length_lower == length - RTP_HEADER_SIZE) {
         /* The message is sent in single part */
 
@@ -1180,6 +1118,7 @@ int rtp_send_data(RTPSession *session, const uint8_t *data, uint32_t length, boo
                   uint64_t frame_record_timestamp, int32_t fragment_num,
                   uint32_t codec_used, uint32_t bit_rate_used,
                   uint32_t client_capture_delay_ms,
+                  uint32_t video_frame_orientation_angle,
                   Logger *log)
 {
     if (!session) {
@@ -1217,12 +1156,26 @@ int rtp_send_data(RTPSession *session, const uint8_t *data, uint32_t length, boo
 
     header.data_length_lower = length;
 
+    header.flags = 0; // just to be safe, initialize the flags to zero
+
     header.flags = RTP_LARGE_FRAME | RTP_ENCODER_HAS_RECORD_TIMESTAMP;
 
     if ((codec_used == TOXAV_ENCODER_CODEC_USED_H264) &&
             (is_video_payload == 1)) {
         header.flags = header.flags | RTP_ENCODER_IS_H264;
     }
+
+    if (video_frame_orientation_angle == TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION_90) {
+        header.flags = header.flags | RTP_ENCODER_VIDEO_ROTATION_ANGLE_BIT0;
+    } else if (video_frame_orientation_angle == TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION_180) {
+        header.flags = header.flags | RTP_ENCODER_VIDEO_ROTATION_ANGLE_BIT1;
+    } else if (video_frame_orientation_angle == TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION_270) {
+        header.flags = header.flags | RTP_ENCODER_VIDEO_ROTATION_ANGLE_BIT0;
+        header.flags = header.flags | RTP_ENCODER_VIDEO_ROTATION_ANGLE_BIT1;
+    }
+
+    LOGGER_DEBUG(session->m->log, "FRAMEFLAGS:%d angle=%d", (int)header.flags, video_frame_orientation_angle);
+
 
     header.frame_record_timestamp = frame_record_timestamp;
 

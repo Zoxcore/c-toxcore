@@ -670,8 +670,8 @@ VCSession *vc_new_h264_omx_raspi(Logger *log, ToxAV *av, uint32_t friend_number,
 
     vc->h264_decoder = avcodec_alloc_context3(codec);
 
-    if (codec->capabilities & CODEC_CAP_TRUNCATED) {
-        vc->h264_decoder->flags |= CODEC_FLAG_TRUNCATED; /* we do not send complete frames */
+    if (codec->capabilities & AV_CODEC_CAP_TRUNCATED) {
+        vc->h264_decoder->flags |= AV_CODEC_FLAG_TRUNCATED; /* we do not send complete frames */
     }
 
     vc->h264_decoder->refcounted_frames = 0;
@@ -990,6 +990,7 @@ uint32_t send_frames_h264_omx_raspi(ToxAV *av, uint32_t friend_number, uint16_t 
                       TOXAV_ENCODER_CODEC_USED_H264,
                       call->video_bit_rate,
                       call->video.second->client_video_capture_delay_ms,
+                      call->video.second->video_encoder_frame_orientation_angle,
                       av->m->log
                   );
 
