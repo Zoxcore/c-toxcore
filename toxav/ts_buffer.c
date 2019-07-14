@@ -70,7 +70,7 @@ void *tsb_write(TSBuffer *b, void *p, const uint64_t data_type, const uint32_t t
     return rc;
 }
 
-static void tsb_move_delete_entry(TSBuffer *b, Logger *log, uint16_t src_index, uint16_t dst_index)
+static void tsb_move_delete_entry(TSBuffer *b, const Logger *log, uint16_t src_index, uint16_t dst_index)
 {
     if (log) {
         struct RTPMessage *msg = b->data[dst_index];
@@ -103,7 +103,7 @@ static void tsb_move_delete_entry(TSBuffer *b, Logger *log, uint16_t src_index, 
     // just to be safe ---
 }
 
-static void tsb_close_hole(TSBuffer *b, Logger *log, uint16_t start_index, uint16_t hole_index)
+static void tsb_close_hole(TSBuffer *b, const Logger *log, uint16_t start_index, uint16_t hole_index)
 {
     int32_t current_index = (int32_t)hole_index;
 
@@ -139,7 +139,7 @@ static void tsb_close_hole(TSBuffer *b, Logger *log, uint16_t start_index, uint1
     }
 }
 
-static uint16_t tsb_delete_old_entries(TSBuffer *b, Logger *log, const uint32_t timestamp_threshold)
+static uint16_t tsb_delete_old_entries(TSBuffer *b, const Logger *log, const uint32_t timestamp_threshold)
 {
     // buffer empty, nothing to delete
     if (tsb_empty(b) == true) {
@@ -203,7 +203,7 @@ void tsb_get_range_in_buffer(TSBuffer *b, uint32_t *timestamp_min, uint32_t *tim
     }
 }
 
-static bool tsb_return_oldest_entry_in_range(TSBuffer *b, Logger *log, void **p, uint64_t *data_type,
+static bool tsb_return_oldest_entry_in_range(TSBuffer *b, const Logger *log, void **p, uint64_t *data_type,
         uint32_t *timestamp_out,
         const uint32_t timestamp_in, const uint32_t timestamp_range)
 {
@@ -314,7 +314,7 @@ static bool tsb_return_oldest_entry_in_range(TSBuffer *b, Logger *log, void **p,
     return false;
 }
 
-bool tsb_read(TSBuffer *b, Logger *log, void **p, uint64_t *data_type, uint32_t *timestamp_out,
+bool tsb_read(TSBuffer *b, const Logger *log, void **p, uint64_t *data_type, uint32_t *timestamp_out,
               const uint32_t timestamp_in, const uint32_t timestamp_range,
               uint16_t *removed_entries_back, uint16_t *is_skipping)
 {

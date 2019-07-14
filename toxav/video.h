@@ -260,7 +260,7 @@ typedef struct VCSession_s {
     void *vpx_frames_buf_list[VIDEO_MAX_FRAGMENT_BUFFER_COUNT];
     uint16_t fragment_buf_counter;
 
-    Logger *log;
+    const Logger *log;
     ToxAV *av;
     uint32_t friend_number;
     uint32_t incoming_video_bitrate_last_changed;

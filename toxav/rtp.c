@@ -146,12 +146,6 @@ static int8_t get_slot(Logger *log, struct RTPWorkBufferList *wkbl, bool is_keyf
 
     // If there is a free slot:
     if (wkbl->next_free_entry < USED_RTP_WORKBUFFER_COUNT) {
-        // If there is at least one filled slot:
-        if (wkbl->next_free_entry > 0) {
-            // Get the most recently filled slot.
-            const struct RTPWorkBuffer *slot = &wkbl->work_buffer[wkbl->next_free_entry - 1];
-        }
-
         // Not all slots are filled, and the packet is newer than our most
         // recent slot, so it's a new frame we want to start assembling. This is
         // the second situation in the above diagram.
@@ -548,7 +542,7 @@ static int handle_rtp_packet(Messenger *m, uint32_t friendnumber, const uint8_t 
                 LOGGER_DEBUG(m->log, "RECVD:PACKET_TOXAV_COMM_CHANNEL_DUMMY_NTP_REQUEST: %d %d %d %d",
                              pkg_buf[6], pkg_buf[7], pkg_buf[8], pkg_buf[9]);
 
-                int result = send_custom_lossless_packet(m, friendnumber, pkg_buf, pkg_buf_len);
+                send_custom_lossless_packet(m, friendnumber, pkg_buf, pkg_buf_len);
 
 
             } else if (data[1] == PACKET_TOXAV_COMM_CHANNEL_DUMMY_NTP_ANSWER) {
@@ -625,7 +619,7 @@ static int handle_rtp_packet(Messenger *m, uint32_t friendnumber, const uint8_t 
 
                 int64_t *ptmp = &(((VCSession *)(session->cs))->timestamp_difference_to_sender);
 
-                bool res4 = dntp_drift(ptmp, offset_, (int64_t)800);
+                dntp_drift(ptmp, offset_, (int64_t)800);
                 LOGGER_DEBUG(m->log, "DNTP:*B*:offset new=%lu",
                              (unsigned long)((VCSession *)(session->cs))->timestamp_difference_to_sender);
             }
@@ -717,7 +711,7 @@ static int handle_rtp_packet(Messenger *m, uint32_t friendnumber, const uint8_t 
         pkg_buf[4] = tmp >> 8  & 0xFF;
         pkg_buf[5] = tmp       & 0xFF;
 
-        int result = send_custom_lossless_packet(m, friendnumber, pkg_buf, pkg_buf_len);
+        send_custom_lossless_packet(m, friendnumber, pkg_buf, pkg_buf_len);
     }
 
     // HINT: ask sender for dummy ntp values -------------

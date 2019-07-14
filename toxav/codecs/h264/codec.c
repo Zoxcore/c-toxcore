@@ -268,7 +268,7 @@ void my_log_callback(void *ptr, int level, const char *fmt, va_list vargs)
     */
 }
 
-VCSession *vc_new_h264(Logger *log, ToxAV *av, uint32_t friend_number, toxav_video_receive_frame_cb *cb, void *cb_data,
+VCSession *vc_new_h264(const Logger *log, ToxAV *av, uint32_t friend_number, toxav_video_receive_frame_cb *cb, void *cb_data,
                        VCSession *vc)
 {
 
@@ -658,7 +658,7 @@ int vc_reconfigure_encoder_h264(Logger *log, VCSession *vc, uint32_t bit_rate,
             // param.rc.i_bitrate = (bit_rate / 1000) * VIDEO_BITRATE_FACTOR_H264;
             vc->h264_enc_bitrate = bit_rate;
 
-            int res = x264_encoder_reconfig(vc->h264_encoder, &param);
+            x264_encoder_reconfig(vc->h264_encoder, &param);
         } else {
 
 #ifndef X264_ENCODE_USED

@@ -33,12 +33,11 @@
 #include <stdlib.h>
 
 static struct TSBuffer *jbuf_new(int size);
-static void jbuf_clear(struct TSBuffer *q);
 static void jbuf_free(struct TSBuffer *q);
-static int jbuf_write(Logger *log, ACSession *ac, struct TSBuffer *q, struct RTPMessage *m);
+static int jbuf_write(const Logger *log, ACSession *ac, struct TSBuffer *q, struct RTPMessage *m);
 
-OpusEncoder *create_audio_encoder(Logger *log, int32_t bit_rate, int32_t sampling_rate, int32_t channel_count);
-bool reconfigure_audio_encoder(Logger *log, OpusEncoder **e, int32_t new_br, int32_t new_sr, uint8_t new_ch,
+OpusEncoder *create_audio_encoder(const Logger *log, int32_t bit_rate, int32_t sampling_rate, int32_t channel_count);
+bool reconfigure_audio_encoder(const Logger *log, OpusEncoder **e, int32_t new_br, int32_t new_sr, uint8_t new_ch,
                                int32_t *old_br, int32_t *old_sr, int32_t *old_ch);
 bool reconfigure_audio_decoder(ACSession *ac, int32_t sampling_rate, int8_t channels);
 
@@ -142,7 +141,7 @@ void ac_kill(ACSession *ac)
     free(ac);
 }
 
-static inline struct RTPMessage *jbuf_read(Logger *log, struct TSBuffer *q, int32_t *success,
+static inline struct RTPMessage *jbuf_read(const Logger *log, struct TSBuffer *q, int32_t *success,
         int64_t timestamp_difference_adjustment_,
         int64_t timestamp_difference_to_sender_,
         uint8_t encoder_frame_has_record_timestamp,
@@ -420,39 +419,13 @@ static struct TSBuffer *jbuf_new(int size)
     return tsb_new(size);
 }
 
-static void jbuf_clear(struct TSBuffer *q)
-{
-    tsb_drain(q);
-}
-
 static void jbuf_free(struct TSBuffer *q)
 {
     tsb_drain(q);
     tsb_kill(q);
 }
 
-static struct RTPMessage *new_empty_message(size_t allocate_len, const uint8_t *data, uint16_t data_length)
-{
-    struct RTPMessage *msg = (struct RTPMessage *)calloc(sizeof(struct RTPMessage) + (allocate_len - sizeof(
-                                 struct RTPHeader)), 1);
-
-    msg->len = data_length - sizeof(struct RTPHeader); // result without header
-    memcpy(&msg->header, data, data_length);
-
-    // clear data
-    memset(&msg->data, 0, (size_t)(msg->len));
-
-    msg->header.sequnum = net_ntohs(msg->header.sequnum);
-    msg->header.timestamp = net_ntohl(msg->header.timestamp);
-    msg->header.ssrc = net_ntohl(msg->header.ssrc);
-
-    msg->header.offset_lower = net_ntohs(msg->header.offset_lower);
-    msg->header.data_length_lower = net_ntohs(msg->header.data_length_lower); // result without header
-
-    return msg;
-}
-
-static int jbuf_write(Logger *log, ACSession *ac, struct TSBuffer *q, struct RTPMessage *m)
+static int jbuf_write(const Logger *log, ACSession *ac, struct TSBuffer *q, struct RTPMessage *m)
 {
     void *tmp_buf2 = tsb_write(q, (void *)m, 0, (uint32_t)m->header.frame_record_timestamp);
 
@@ -465,7 +438,7 @@ static int jbuf_write(Logger *log, ACSession *ac, struct TSBuffer *q, struct RTP
     return 0;
 }
 
-OpusEncoder *create_audio_encoder(Logger *log, int32_t bit_rate, int32_t sampling_rate, int32_t channel_count)
+OpusEncoder *create_audio_encoder(const Logger *log, int32_t bit_rate, int32_t sampling_rate, int32_t channel_count)
 {
     int status = OPUS_OK;
 
@@ -567,7 +540,7 @@ FAILURE:
     return NULL;
 }
 
-bool reconfigure_audio_encoder(Logger *log, OpusEncoder **e, int32_t new_br, int32_t new_sr, uint8_t new_ch,
+bool reconfigure_audio_encoder(const Logger *log, OpusEncoder **e, int32_t new_br, int32_t new_sr, uint8_t new_ch,
                                int32_t *old_br, int32_t *old_sr, int32_t *old_ch)
 {
     /* Values are checked in toxav.c */

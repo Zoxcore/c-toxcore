@@ -26,26 +26,7 @@
 #include "../../../toxcore/mono_time.h"
 #include "../toxav_codecs.h"
 
-
-static uint32_t MaxIntraTarget(uint32_t optimalBuffersize)
-{
-    // Set max to the optimal buffer level (normalized by target BR),
-    // and scaled by a scalePar.
-    // Max target size = scalePar * optimalBufferSize * targetBR[Kbps].
-    // This values is presented in percentage of perFrameBw:
-    // perFrameBw = targetBR[Kbps] * 1000 / frameRate.
-    // The target in % is as follows:
-    float scalePar = 0.5;
-    float codec_maxFramerate = 30;
-    uint32_t targetPct = optimalBuffersize * scalePar * codec_maxFramerate / 10;
-
-    // Don't go below 3 times the per frame bandwidth.
-    const uint32_t minIntraTh = 300;
-    return (targetPct < minIntraTh) ? minIntraTh : targetPct;
-}
-
-
-static void vc__init_encoder_cfg(Logger *log, vpx_codec_enc_cfg_t *cfg, int16_t kf_max_dist, int32_t quality,
+static void vc__init_encoder_cfg(const Logger *log, vpx_codec_enc_cfg_t *cfg, int16_t kf_max_dist, int32_t quality,
                                  int32_t rc_max_quantizer, int32_t rc_min_quantizer, int32_t encoder_codec,
                                  int32_t video_keyframe_method)
 {
@@ -162,7 +143,7 @@ static void vc__init_encoder_cfg(Logger *log, vpx_codec_enc_cfg_t *cfg, int16_t 
 }
 
 
-VCSession *vc_new_vpx(Logger *log, ToxAV *av, uint32_t friend_number, toxav_video_receive_frame_cb *cb, void *cb_data,
+VCSession *vc_new_vpx(const Logger *log, ToxAV *av, uint32_t friend_number, toxav_video_receive_frame_cb *cb, void *cb_data,
                       VCSession *vc)
 {
 
@@ -763,10 +744,6 @@ void decode_frame_vpx(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint
                       uint32_t full_data_len,
                       uint8_t *ret_value)
 {
-
-
-
-    long decoder_soft_dealine_value_used = VPX_DL_REALTIME;
     void *user_priv = NULL;
 
     if (header_v3->frame_record_timestamp > 0) {
@@ -816,7 +793,6 @@ void decode_frame_vpx(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint
             }
         }
 
-        decoder_soft_dealine_value_used = decode_time_auto_tune;
         rc = vpx_codec_decode(vc->decoder, p->data, full_data_len, user_priv, (long)decode_time_auto_tune);
 
         LOGGER_DEBUG(vc->log, "AUTOTUNE:MAX_DECODE_TIME_US=%ld us = %.1f fps", (long)decode_time_auto_tune,

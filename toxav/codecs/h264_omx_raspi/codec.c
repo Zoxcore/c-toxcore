@@ -646,7 +646,7 @@ static void startup_h264_omx_raspi_encoder(VCSession *vc, uint16_t width, uint16
 
 }
 
-VCSession *vc_new_h264_omx_raspi(Logger *log, ToxAV *av, uint32_t friend_number, toxav_video_receive_frame_cb *cb,
+VCSession *vc_new_h264_omx_raspi(const Logger *log, ToxAV *av, uint32_t friend_number, toxav_video_receive_frame_cb *cb,
                                  void *cb_data,
                                  VCSession *vc)
 {

@@ -52,7 +52,7 @@ struct vpx_frame_user_data {
 
 
 // ----------- VPX  -----------
-VCSession *vc_new_vpx(Logger *log, ToxAV *av, uint32_t friend_number, toxav_video_receive_frame_cb *cb, void *cb_data,
+VCSession *vc_new_vpx(const Logger *log, ToxAV *av, uint32_t friend_number, toxav_video_receive_frame_cb *cb, void *cb_data,
                       VCSession *vc);
 
 int vc_reconfigure_encoder_vpx(Logger *log, VCSession *vc, uint32_t bit_rate,
@@ -88,7 +88,7 @@ void vc_kill_vpx(VCSession *vc);
 
 
 // ----------- H264 -----------
-VCSession *vc_new_h264(Logger *log, ToxAV *av, uint32_t friend_number, toxav_video_receive_frame_cb *cb, void *cb_data,
+VCSession *vc_new_h264(const Logger *log, ToxAV *av, uint32_t friend_number, toxav_video_receive_frame_cb *cb, void *cb_data,
                        VCSession *vc);
 
 int vc_reconfigure_encoder_h264(Logger *log, VCSession *vc, uint32_t bit_rate,
@@ -125,7 +125,7 @@ void vc_kill_h264(VCSession *vc);
 
 
 // ----------- H264 OMX RaspberryPi -----------
-VCSession *vc_new_h264_omx_raspi(Logger *log, ToxAV *av, uint32_t friend_number, toxav_video_receive_frame_cb *cb,
+VCSession *vc_new_h264_omx_raspi(const Logger *log, ToxAV *av, uint32_t friend_number, toxav_video_receive_frame_cb *cb,
                                  void *cb_data,
                                  VCSession *vc);
 
