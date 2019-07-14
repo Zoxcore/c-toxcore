@@ -227,10 +227,6 @@ void toxav_audio_iterate(ToxAV *av)
             // pthread_mutex_unlock(av->mutex);
 
             uint8_t res_ac = ac_iterate(i->audio,
-                                        &(i->last_incoming_audio_frame_rtimestamp),
-                                        &(i->last_incoming_audio_frame_ltimestamp),
-                                        &(i->last_incoming_video_frame_rtimestamp),
-                                        &(i->last_incoming_video_frame_ltimestamp),
                                         &(i->call_timestamp_difference_adjustment),
                                         &(i->call_timestamp_difference_to_sender)
                                        );
@@ -288,10 +284,6 @@ void toxav_iterate(ToxAV *av)
             if (!av->toxav_audio_iterate_seperation_active) {
                 // ------- av_iterate for audio -------
                 uint8_t res_ac = ac_iterate(i->audio,
-                                            &(i->last_incoming_audio_frame_rtimestamp),
-                                            &(i->last_incoming_audio_frame_ltimestamp),
-                                            &(i->last_incoming_video_frame_rtimestamp),
-                                            &(i->last_incoming_video_frame_ltimestamp),
                                             &(i->call_timestamp_difference_adjustment),
                                             &(i->call_timestamp_difference_to_sender)
                                            );
@@ -2516,5 +2508,3 @@ void call_kill_transmission(ToxAVCall *call)
     pthread_mutex_destroy(call->mutex_audio);
     pthread_mutex_destroy(call->mutex_video);
 }
-
-

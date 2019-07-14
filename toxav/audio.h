@@ -106,8 +106,7 @@ typedef struct ACSession_s {
 ACSession *ac_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t friend_number,
                   toxav_audio_receive_frame_cb *cb, void *cb_data);
 void ac_kill(ACSession *ac);
-uint8_t ac_iterate(ACSession *ac, uint64_t *a_r_timestamp, uint64_t *a_l_timestamp, uint64_t *v_r_timestamp,
-                   uint64_t *v_l_timestamp,
+uint8_t ac_iterate(ACSession *ac,
                    int64_t *timestamp_difference_adjustment_,
                    int64_t *timestamp_difference_to_sender_);
 int ac_queue_message(Mono_Time *mono_time, void *acp, struct RTPMessage *msg);
