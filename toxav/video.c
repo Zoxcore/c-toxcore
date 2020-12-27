@@ -1,21 +1,6 @@
-/*
+/* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright © 2016-2018 The TokTok team.
  * Copyright © 2013-2015 Tox project.
- *
- * This file is part of Tox, the free peer to peer instant messenger.
- *
- * Tox is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Tox is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Tox.  If not, see <http://www.gnu.org/licenses/>.
  */
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -30,7 +15,6 @@
 
 #include "../toxcore/logger.h"
 #include "../toxcore/network.h"
-#include "../toxcore/Messenger.h"
 #include "../toxcore/mono_time.h"
 
 
@@ -38,6 +22,7 @@
 
 #include "codecs/toxav_codecs.h"
 
+#include <stdio.h>
 #include <assert.h>
 #include <stdlib.h>
 
@@ -45,23 +30,63 @@
 // #define DEBUG_SHOW_H264_DECODING_TIME 1
 /* activate only for debugging!! */
 
+/*
+ * Zoff: disable logging in ToxAV for now
+ */
+#include <stdio.h>
+
+
+#undef LOGGER_DEBUG
+#define LOGGER_DEBUG(log, ...) printf("")
+#undef LOGGER_ERROR
+#define LOGGER_ERROR(log, ...) printf("")
+#undef LOGGER_WARNING
+#define LOGGER_WARNING(log, ...) printf("")
+#undef LOGGER_INFO
+#define LOGGER_INFO(log, ...) printf("")
+
+/*
+ * Zoff: disable logging in ToxAV for now
+ */
+
+/*
+ * return -1 on failure, 0 on success
+ *
+ */
+
+extern bool global_do_not_sync_av;
+
+int video_send_custom_lossless_packet(Tox *tox, int32_t friendnumber, const uint8_t *data, uint32_t length);
+
+int video_send_custom_lossless_packet(Tox *tox, int32_t friendnumber, const uint8_t *data, uint32_t length)
+{
+    TOX_ERR_FRIEND_CUSTOM_PACKET error;
+    tox_friend_send_lossless_packet(tox, friendnumber, data, (size_t)length, &error);
+
+    if (error == TOX_ERR_FRIEND_CUSTOM_PACKET_OK) {
+        return 0;
+    }
+
+    return -1;
+}
+
 VCSession *vc_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t friend_number,
                   toxav_video_receive_frame_cb *cb, void *cb_data)
 {
     VCSession *vc = (VCSession *)calloc(sizeof(VCSession), 1);
 
     if (!vc) {
-        LOGGER_WARNING(log, "Allocation failed! Application might misbehave!");
+        LOGGER_API_WARNING(av->tox, "Allocation failed! Application might misbehave!");
         return NULL;
     }
 
     if (create_recursive_mutex(vc->queue_mutex) != 0) {
-        LOGGER_WARNING(log, "Failed to create recursive mutex!");
+        LOGGER_API_WARNING(av->tox, "Failed to create recursive mutex!");
         free(vc);
         return NULL;
     }
 
-    LOGGER_WARNING(log, "vc_new ...");
+    LOGGER_API_WARNING(av->tox, "vc_new ...");
 
     // options ---
     vc->video_encoder_cpu_used = VP8E_SET_CPUUSED_VALUE;
@@ -97,7 +122,9 @@ VCSession *vc_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t f
     vc->dummy_ntp_local_end = 0;
     vc->dummy_ntp_remote_start = 0;
     vc->dummy_ntp_remote_end = 0;
-    vc->rountrip_time_ms = 0;
+    vc->rountrip_time_ms = 300; // set xxx ms rountrip network time, before we get an actual value calculated
+    vc->has_rountrip_time_ms = 0;
+    vc->pinned_to_rountrip_time_ms = 0;
     vc->video_play_delay = 0;
     vc->video_play_delay_real = 0;
     vc->video_frame_buffer_entries = 0;
@@ -108,25 +135,54 @@ VCSession *vc_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t f
 
     vc->last_incoming_frame_ts = 0;
     vc->last_parsed_h264_sps_ts = 0;
-    vc->timestamp_difference_to_sender = 0;
+    vc->timestamp_difference_to_sender__for_video = 0;
     vc->timestamp_difference_adjustment = -450;
-    vc->tsb_range_ms = 60;
+    vc->video_received_first_frame = 0;
+    vc->tsb_range_ms = 90; // video frames played with have this much jitter (in ms) to the time they should be played
     vc->startup_video_timespan = 8000;
     vc->incoming_video_bitrate_last_changed = 0;
     vc->network_round_trip_time_last_cb_ts = 0;
+    vc->network_round_trip_adjustment = 0;
     vc->incoming_video_bitrate_last_cb_ts = 0;
     vc->last_requested_lower_fps_ts = 0;
     vc->encoder_frame_has_record_timestamp = 1;
     vc->video_max_bitrate = VIDEO_BITRATE_MAX_AUTO_VALUE_H264;
-    vc->video_decoder_buffer_ms = MIN_AV_BUFFERING_MS;
-    vc->video_decoder_adjustment_base_ms = MIN_AV_BUFFERING_MS - AV_BUFFERING_DELTA_MS;
+    // -----------------------------------
+    vc->video_decoder_buffer_ms = 0;
+    vc->video_decoder_add_delay_ms = 0;
+    // -----------------------------------
+    vc->video_decoder_caused_delay_ms = 0;
     vc->client_video_capture_delay_ms = 0;
     vc->remote_client_video_capture_delay_ms = 0;
+    vc->global_decode_first_frame_delayed_by = 0;
+    vc->global_decode_first_frame_delayed_ms = 0;
+    vc->global_decode_first_frame_got = 0;
     // options ---
 
     vc->incoming_video_frames_gap_ms_index = 0;
     vc->incoming_video_frames_gap_last_ts = 0;
     vc->incoming_video_frames_gap_ms_mean_value = 0;
+
+    vc->video_decoder_caused_delay_ms_array_index = 0;
+    vc->video_decoder_caused_delay_ms_mean_value = 0;
+
+    vc->video_buf_ms_array_index = 0;
+    vc->video_buf_ms_mean_value = 0;
+
+    vc->video_buf_ms_array_index_long = 0;
+    vc->video_buf_ms_mean_value_long = 0;
+
+    vc->encoder_codec_used_name = calloc(1, 500);
+    vc->x264_software_encoder_used = 1;
+
+    // set h264 callback
+    vc->vcb_h264 = av->vcb_h264;
+    vc->vcb_h264_user_data = av->vcb_h264_user_data;
+
+    // set pts callback
+    vc->vcb_pts = av->vcb_pts;
+    vc->vcb_pts_user_data = av->vcb_pts_user_data;
+
 
     for (int i = 0; i < VIDEO_INCOMING_FRAMES_GAP_MS_ENTRIES; i++) {
         vc->incoming_video_frames_gap_ms[i] = 0;
@@ -150,7 +206,7 @@ VCSession *vc_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t f
 
 #endif
 
-    LOGGER_WARNING(log, "vc_new:rb_new OK");
+    LOGGER_API_WARNING(av->tox, "vc_new:rb_new OK");
 
     // HINT: tell client what encoder and decoder are in use now -----------
     if (av->call_comm_cb) {
@@ -183,14 +239,7 @@ VCSession *vc_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t f
 
     // HINT: initialize the H264 encoder
 
-
-#ifdef RASPBERRY_PI_OMX
-    LOGGER_WARNING(log, "OMX:002");
-    vc = vc_new_h264_omx_raspi(log, av, friend_number, cb, cb_data, vc);
-    LOGGER_WARNING(log, "OMX:003");
-#else
     vc = vc_new_h264(log, av, friend_number, cb, cb_data, vc);
-#endif
 
     // HINT: initialize VP8 encoder
     return vc_new_vpx(log, av, friend_number, cb, cb_data, vc);
@@ -223,6 +272,12 @@ void vc_kill(VCSession *vc)
     vc_kill_h264(vc);
 #endif
     vc_kill_vpx(vc);
+
+    if (vc->encoder_codec_used_name)
+    {
+        free(vc->encoder_codec_used_name);
+        vc->encoder_codec_used_name = NULL;
+    }
 
     void *p;
     uint64_t dummy;
@@ -281,17 +336,19 @@ void video_switch_decoder(VCSession *vc, TOXAV_ENCODER_CODEC_USED_VALUE decoder_
     }
 }
 
+// static int global_last_viterate_ts = 0;
+// static int global___ts1 = 0;
 
 /* --- VIDEO DECODING happens here --- */
 /* --- VIDEO DECODING happens here --- */
 /* --- VIDEO DECODING happens here --- */
-uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_t *a_r_timestamp,
+uint8_t vc_iterate(VCSession *vc, Tox *tox, uint8_t skip_video_flag, uint64_t *a_r_timestamp,
                    uint64_t *a_l_timestamp,
                    uint64_t *v_r_timestamp, uint64_t *v_l_timestamp, BWController *bwc,
-                   int64_t *timestamp_difference_adjustment_,
-                   int64_t *timestamp_difference_to_sender_)
+                   int64_t *timestamp_difference_adjustment_for_audio,
+                   int64_t *timestamp_difference_to_sender_,
+                   int32_t *video_has_rountrip_time_ms)
 {
-
     if (!vc) {
         return 0;
     }
@@ -300,9 +357,16 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
     struct RTPMessage *p;
     bool have_requested_index_frame = false;
 
-    vpx_codec_err_t rc;
+    vpx_codec_err_t rc = 0;
 
-    pthread_mutex_lock(vc->queue_mutex);
+    LOGGER_API_DEBUG(tox, "vc_iterate:enter:fnum=%d", vc->friend_number);
+
+    LOGGER_API_DEBUG(tox, "try_lock");
+    if (pthread_mutex_trylock(vc->queue_mutex) != 0) {
+        LOGGER_API_DEBUG(tox, "NO_lock");
+        return 0;
+    }
+    LOGGER_API_DEBUG(tox, "got_lock");
 
     uint64_t frame_flags;
     uint8_t data_type;
@@ -310,201 +374,298 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
 
     uint32_t full_data_len;
 
-#ifdef USE_TS_BUFFER_FOR_VIDEO
     uint32_t timestamp_out_ = 0;
     uint32_t timestamp_min = 0;
     uint32_t timestamp_max = 0;
 
-    *timestamp_difference_to_sender_ = vc->timestamp_difference_to_sender;
+    *timestamp_difference_to_sender_ = vc->timestamp_difference_to_sender__for_video;
 
-    tsb_get_range_in_buffer((TSBuffer *)vc->vbuf_raw, &timestamp_min, &timestamp_max);
+    tsb_get_range_in_buffer(tox, (TSBuffer *)vc->vbuf_raw, &timestamp_min, &timestamp_max);
 
 
-    int64_t want_remote_video_ts = (current_time_monotonic(m->mono_time) + vc->timestamp_difference_to_sender +
-                                    vc->timestamp_difference_adjustment);
+    /**
+     * this is the magic value that drifts with network delay changes:
+     * vc->timestamp_difference_adjustment
+     */
+    int want_remote_video_ts = ((int)current_time_monotonic(vc->av->toxav_mono_time) +
+                                (int)vc->timestamp_difference_to_sender__for_video +
+                                (int)vc->timestamp_difference_adjustment -
+                                (int)vc->video_decoder_buffer_ms);
+    LOGGER_API_DEBUG(tox, "want_remote_video_ts:v:002=%d, %d %d %d %d",
+            (int)want_remote_video_ts,
+            (int)current_time_monotonic(vc->av->toxav_mono_time),
+            (int)vc->timestamp_difference_to_sender__for_video,
+            (int)vc->timestamp_difference_adjustment,
+            (int)vc->video_decoder_buffer_ms
+            );
+    /**
+     *
+     */
 
-    uint32_t timestamp_want_get = (uint32_t)want_remote_video_ts;
 
+    LOGGER_API_DEBUG(tox, "VC_TS_CALC:01:%d %d %d %d",
+                     (int)want_remote_video_ts,
+                     (int)(current_time_monotonic(vc->av->toxav_mono_time)),
+                     (int)vc->timestamp_difference_to_sender__for_video,
+                     (int)vc->timestamp_difference_adjustment
+                    );
+
+    uint32_t timestamp_want_get = (int)want_remote_video_ts;
 
     // HINT: compensate for older clients ----------------
     if (vc->encoder_frame_has_record_timestamp == 0) {
-        LOGGER_DEBUG(vc->log, "old client:002");
-        vc->tsb_range_ms = (UINT32_MAX - 1);
-        timestamp_want_get = (UINT32_MAX - 1);
+        LOGGER_API_DEBUG(tox, "old client:002");
+        vc->tsb_range_ms = UINT32_MAX;
+        timestamp_want_get = UINT32_MAX;
         vc->startup_video_timespan = 0;
     }
 
     // HINT: compensate for older clients ----------------
 
-#if 0
+    LOGGER_API_DEBUG(tox, "FC:%d min=%d max=%d want=%d diff=%d adj=%d roundtrip=%d",
+                 (int)tsb_size((TSBuffer *)vc->vbuf_raw),
+                 timestamp_min,
+                 timestamp_max,
+                 (int)timestamp_want_get,
+                 (int)timestamp_want_get - (int)timestamp_max,
+                 (int)vc->timestamp_difference_adjustment,
+                 (int)vc->rountrip_time_ms);
 
-    if ((int)tsb_size((TSBuffer *)vc->vbuf_raw) > 0) {
-        LOGGER_ERROR(vc->log, "FC:%d min=%ld max=%ld want=%d diff=%d adj=%d roundtrip=%d",
-                     (int)tsb_size((TSBuffer *)vc->vbuf_raw),
-                     timestamp_min,
-                     timestamp_max,
-                     (int)timestamp_want_get,
-                     (int)timestamp_want_get - (int)timestamp_max,
-                     (int)vc->timestamp_difference_adjustment,
-                     (int)vc->rountrip_time_ms);
+
+    int32_t video_frame_diff = (int)timestamp_want_get - (int)timestamp_max;
+    int has_adjusted = 0;
+
+    // ------- calc mean value -------
+    if ((video_frame_diff > -800) && (video_frame_diff < 3000))
+    {
+        vc->video_buf_ms_array[vc->video_buf_ms_array_index] = video_frame_diff + 1000;
+        vc->video_buf_ms_array_index = (vc->video_buf_ms_array_index + 1) %
+                VIDEO_BUF_MS_ENTRIES;
+
+        int32_t mean_value = 0;
+
+        for (int k = 0; k < VIDEO_BUF_MS_ENTRIES; k++) {
+            mean_value = mean_value + vc->video_buf_ms_array[k];
+        }
+
+        if (mean_value == 0) {
+        } else {
+            vc->video_buf_ms_mean_value = (mean_value / VIDEO_BUF_MS_ENTRIES) - 1000;
+        }
+    }
+    // ------- calc mean value -------
+
+
+    // ------- calc mean value -------
+    if ((video_frame_diff > -3000) && (video_frame_diff < 20000))
+    {
+        vc->video_buf_ms_array_long[vc->video_buf_ms_array_index_long] = video_frame_diff + 4000;
+        vc->video_buf_ms_array_index_long = (vc->video_buf_ms_array_index_long + 1) %
+                VIDEO_BUF_MS_ENTRIES_LONG;
+
+        int32_t mean_value = 0;
+
+        for (int k = 0; k < VIDEO_BUF_MS_ENTRIES_LONG; k++) {
+            mean_value = mean_value + vc->video_buf_ms_array_long[k];
+        }
+
+        if (mean_value == 0) {
+        } else {
+            vc->video_buf_ms_mean_value_long = (mean_value / VIDEO_BUF_MS_ENTRIES_LONG) - 4000;
+        }
+    }
+    // ------- calc mean value -------
+
+
+    LOGGER_API_DEBUG(tox, "rtt:drift:vfd:a:rtt=%d adj=%d cur=%d m=%d ml=%d",
+                    (int32_t)vc->rountrip_time_ms,
+                    (int)(vc->timestamp_difference_adjustment),
+                    video_frame_diff,
+                    vc->video_buf_ms_mean_value,
+                    vc->video_buf_ms_mean_value_long);
+
+    if ((vc->pinned_to_rountrip_time_ms == 0) && (vc->has_rountrip_time_ms == 1))
+    {
+        // ------------ pin play out timestamps to (RTT/2 + "GUESS_REMOTE_ENCODER_DELAY_MS" ms)
+        vc->timestamp_difference_adjustment = -(int)((vc->rountrip_time_ms/2) + GUESS_REMOTE_ENCODER_DELAY_MS);
+        vc->network_round_trip_adjustment = vc->rountrip_time_ms;
+        LOGGER_API_DEBUG(tox, "adj:drift:5a:jmp:%d video_frame_diff=%d rtt_adj=%d", (int)(vc->timestamp_difference_adjustment), video_frame_diff, vc->network_round_trip_adjustment);
+        vc->pinned_to_rountrip_time_ms = 1;
     }
 
-#endif
+    LOGGER_API_DEBUG(tox, "adj:xxxx:9:%d video_frame_diff=%d rtt_adj=%d", (int)(vc->timestamp_difference_adjustment), video_frame_diff, vc->network_round_trip_adjustment);
 
-    // HINT: correct for very false values ------------
-    if ((int)tsb_size((TSBuffer *)vc->vbuf_raw) > (VIDEO_RINGBUFFER_BUFFER_ELEMENTS - 2)) {
-        // HINT: buffer with incoming video frames is very full
-        if (timestamp_want_get > (timestamp_max + 100)) {
-            // we wont get a frame like this
-            vc->timestamp_difference_adjustment = vc->timestamp_difference_adjustment -
-                                                  (timestamp_want_get - timestamp_max) - 10;
-
-            LOGGER_ERROR(vc->log, "DEFF_CORR:--:%d", (int)((timestamp_want_get - timestamp_max) - 10));
-
-            want_remote_video_ts = (current_time_monotonic(m->mono_time) + vc->timestamp_difference_to_sender +
-                                    vc->timestamp_difference_adjustment);
-
-            timestamp_want_get = (uint32_t)want_remote_video_ts;
-        } else if ((timestamp_want_get + 100) < timestamp_min) {
-            vc->timestamp_difference_adjustment = vc->timestamp_difference_adjustment +
-                                                  (timestamp_min - timestamp_want_get) + 10;
-
-            LOGGER_ERROR(vc->log, "DEFF_CORR:++++:%d", (int)((timestamp_min - timestamp_want_get) + 10));
-
-            want_remote_video_ts = (current_time_monotonic(m->mono_time) + vc->timestamp_difference_to_sender +
-                                    vc->timestamp_difference_adjustment);
-
-            timestamp_want_get = (uint32_t)want_remote_video_ts;
+    if (vc->has_rountrip_time_ms == 1)
+    {
+        // im RTT changed by 2ms in either direction then drift network_round_trip_adjustment in that way by 1ms
+        if (vc->network_round_trip_adjustment > ((int32_t)vc->rountrip_time_ms + 1))
+        {
+            vc->network_round_trip_adjustment--;
+            vc->network_round_trip_adjustment--;
+            vc->timestamp_difference_adjustment++;
+            LOGGER_API_DEBUG(tox, "adj:drift:aa++");
+        }
+        else if (vc->network_round_trip_adjustment < ((int32_t)vc->rountrip_time_ms - 1))
+        {
+            vc->network_round_trip_adjustment++;
+            vc->network_round_trip_adjustment++;
+            vc->timestamp_difference_adjustment--;
+            LOGGER_API_DEBUG(tox, "adj:drift:aa-----");
         }
     }
 
-    // HINT: correct for very false values ------------
 
     uint16_t removed_entries;
     uint16_t is_skipping = 0;
 
+    uint32_t tsb_range_ms_used = vc->tsb_range_ms + vc->startup_video_timespan;
+    uint32_t timestamp_want_get_used = timestamp_want_get;
+    LOGGER_API_DEBUG(tox,"timestamp_want_get_used:001=%d", (int)timestamp_want_get_used);
+
+    int use_range_all = 0;
+    if (
+        (global_do_not_sync_av) ||
+        (vc->video_received_first_frame == 0) ||
+        (vc->has_rountrip_time_ms == 0) ||
+        (
+            (video_frame_diff > 1000) && (video_frame_diff < 10000))
+        )
+    {
+        tsb_range_ms_used = UINT32_MAX;
+        timestamp_want_get_used = UINT32_MAX;
+        use_range_all = 1;
+        LOGGER_API_DEBUG(tox,"first_frame:001:timestamp_want_get_used:002=%d", (int)timestamp_want_get_used);
+    }
+
+    if (use_range_all == 1)
+    {
+        // this will force audio stream to play anything that comes in without timestamps
+        *video_has_rountrip_time_ms = 0;
+        LOGGER_API_DEBUG(tox,"force_audio");
+    }
+    else
+    {
+        *video_has_rountrip_time_ms = vc->has_rountrip_time_ms;
+    }
+
+
+    if ((video_frame_diff > 1000) && (video_frame_diff < 10000))
+    {
+        LOGGER_API_DEBUG(tox, "video frames are delayed[a] for more than 1000ms (%d ms), turn down bandwidth fast", (int)video_frame_diff);
+        bwc_add_lost_v3(bwc, 199999, true);
+    }
+#if 1
+    else if ((video_frame_diff > 800) && (video_frame_diff < 10000))
+    {
+        LOGGER_API_DEBUG(tox, "video frames are delayed[b] for more than 800ms (%d ms), turn down bandwidth", (int)video_frame_diff);
+        bwc_add_lost_v3(bwc, 60, true);
+    }
+#endif
+#if 1
+    else if ((vc->has_rountrip_time_ms == 1) && (video_frame_diff > 1) && (video_frame_diff > (((int32_t)vc->rountrip_time_ms) + 100)) && (video_frame_diff < 10000))
+    {
+        //if ((uint32_t)tsb_size((TSBuffer *)vc->vbuf_raw) > 0)
+        {
+            if ((vc->rountrip_time_ms > 300) && (vc->rountrip_time_ms < 1000))
+            {
+                LOGGER_API_DEBUG(tox, "video frames are delayed[c] (%d ms, RTT=%d ms), turn down bandwidth", (int)video_frame_diff, (int)vc->rountrip_time_ms);
+                bwc_add_lost_v3(bwc, 3, true);
+            }
+        }
+    }
+#endif
+#if 0
+    else if ((vc->has_rountrip_time_ms == 1) && (vc->video_buf_ms_mean_value < 0) && (vc->video_buf_ms_mean_value > -200))
+    {
+        if ((vc->rountrip_time_ms > 300) && (vc->rountrip_time_ms < 800))
+        {
+            if ((vc->video_decoder_buffer_ms > 0) && (vc->video_decoder_buffer_ms < 298))
+            {
+                // TODO: the problem is this buffer increase will never be turned back.
+                //       let's not do this for now.
+                vc->video_decoder_buffer_ms++;
+                LOGGER_API_DEBUG(tox, "video frames are delayed[d] (%d ms, RTT=%d ms dbuf=%d ms), add more buffering", (int)vc->video_buf_ms_mean_value, (int)vc->rountrip_time_ms, (int)vc->video_decoder_buffer_ms);
+            }
+        }
+    }
+#endif
+
+    if ((video_frame_diff > ((int)vc->video_buf_ms_mean_value_long + 300)) && (video_frame_diff < 100000))
+    {
+        bwc_add_lost_v3(bwc, 70, true);
+        LOGGER_API_DEBUG(tox, "video frames are delayed[e], (vdf=%d RTT=%d ml=%d) turn down bandwidth",
+            (int)video_frame_diff,
+            (int)vc->rountrip_time_ms,
+            (int)vc->video_buf_ms_mean_value_long);
+    }
+
+    LOGGER_API_DEBUG(tox, "tsb_read got: want=%d (%d %d) %d %d %d %d",
+                     (int)timestamp_want_get_used,
+                     (int)timestamp_min,
+                     (int)timestamp_max,
+                     (int)(vc->tsb_range_ms),
+                     (int)(vc->startup_video_timespan),
+                     (int)(tsb_range_ms_used),
+                     (int)tsb_size((TSBuffer *)vc->vbuf_raw)
+                    );
+
+
     // HINT: give me video frames that happend "now" minus some diff
+    //       get a videoframe for timestamp [timestamp_want_get_used]
     if (tsb_read((TSBuffer *)vc->vbuf_raw, vc->log, (void **)&p, &frame_flags,
                  &timestamp_out_,
-                 timestamp_want_get,
-                 vc->tsb_range_ms + vc->startup_video_timespan,
+                 timestamp_want_get_used,
+                 tsb_range_ms_used,
                  &removed_entries,
                  &is_skipping)) {
-#else
 
-    if (rb_read((RingBuffer *)vc->vbuf_raw, (void **)&p, &frame_flags)) {
-#endif
-
-
-
-#if 1
-
-        if ((is_skipping > 0) && (removed_entries > 0)) {
-            if ((vc->last_requested_lower_fps_ts + 10000) < current_time_monotonic(m->mono_time)) {
-
-
-                // HINT: tell sender to turn down video FPS -------------
-                uint32_t pkg_buf_len = 3;
-                uint8_t pkg_buf[pkg_buf_len];
-                pkg_buf[0] = PACKET_TOXAV_COMM_CHANNEL;
-                pkg_buf[1] = PACKET_TOXAV_COMM_CHANNEL_LESS_VIDEO_FPS;
-
-#if 0
-
-                if ((vc->last_requested_lower_fps_ts + 12000) < current_time_monotonic(m->mono_time)) {
-                    pkg_buf[2] = 2;
-                } else {
-                    pkg_buf[2] = 3; // skip every 3rd video frame and dont encode and dont sent it
-                }
-
-#else
-                pkg_buf[2] = 3; // skip every 3rd video frame and dont encode and dont sent it
-#endif
-
-                int result = send_custom_lossless_packet(vc->av->m, vc->friend_number, pkg_buf, pkg_buf_len);
-                // HINT: tell sender to turn down video FPS -------------
-
-                vc->last_requested_lower_fps_ts = current_time_monotonic(m->mono_time);
-
-                LOGGER_DEBUG(vc->log, "request lower FPS from sender: %d ms : skip every %d", (int)is_skipping, (int)pkg_buf[2]);
-            }
+        if (vc->video_received_first_frame == 0) {
+            vc->video_received_first_frame = 1;
         }
-
-#endif
-
-
-
-
-#if 1
-        LOGGER_DEBUG(vc->log, "rtt:drift:1:%d %d %d", (int)(vc->rountrip_time_ms),
-                     (int)(-vc->timestamp_difference_adjustment),
-                     (int)vc->video_decoder_adjustment_base_ms);
-
-        if (vc->rountrip_time_ms > (-vc->timestamp_difference_adjustment - vc->video_decoder_adjustment_base_ms)) {
-            // drift
-            LOGGER_DEBUG(vc->log, "rtt:drift:2:%d > %d", (int)(vc->rountrip_time_ms),
-                         (int)(-vc->timestamp_difference_adjustment - vc->video_decoder_adjustment_base_ms));
-
-            LOGGER_DEBUG(vc->log, "rtt:drift:3:%d < %d", (int)(vc->timestamp_difference_adjustment),
-                         (int)(-vc->video_decoder_buffer_ms));
-
-            if (tsb_size((TSBuffer *)vc->vbuf_raw) < 10) {
-                vc->timestamp_difference_adjustment = vc->timestamp_difference_adjustment - 1;
-                LOGGER_DEBUG(vc->log, "rtt:drift:4:---1:%d", (int)(vc->timestamp_difference_adjustment));
-            } else {
-                vc->timestamp_difference_adjustment = vc->timestamp_difference_adjustment + 1;
-            }
-        } else if (vc->rountrip_time_ms < (-vc->timestamp_difference_adjustment - vc->video_decoder_adjustment_base_ms)) {
-            // drift
-            LOGGER_DEBUG(vc->log, "rtt:drift:5:%d << %d", (int)(vc->rountrip_time_ms),
-                         (int)(-vc->timestamp_difference_adjustment - vc->video_decoder_adjustment_base_ms));
-
-            if (vc->timestamp_difference_adjustment <= -vc->video_decoder_buffer_ms) {
-                LOGGER_DEBUG(vc->log, "rtt:drift:6:%d < %d", (int)(vc->timestamp_difference_adjustment),
-                             (int)(-vc->video_decoder_buffer_ms));
-
-                vc->timestamp_difference_adjustment = vc->timestamp_difference_adjustment + 1;
-                LOGGER_DEBUG(vc->log, "rtt:drift:7:+1:%d", (int)(vc->timestamp_difference_adjustment));
-            }
-        }
-
-#endif
-
-
-
-
-        LOGGER_DEBUG(vc->log, "XLS01:%d,%d",
-                     (int)(timestamp_want_get - current_time_monotonic(m->mono_time)),
-                     (int)(timestamp_out_ - current_time_monotonic(m->mono_time))
-                    );
 
         const struct RTPHeader *header_v3_0 = (void *) & (p->header);
 
-        vc->video_play_delay = ((current_time_monotonic(m->mono_time) + vc->timestamp_difference_to_sender) - timestamp_out_);
+        LOGGER_API_DEBUG(tox, "XLS01:%d,%d, diff_got=%d",
+                         (int)(timestamp_want_get - current_time_monotonic(vc->av->toxav_mono_time)),
+                         (int)(timestamp_out_ - current_time_monotonic(vc->av->toxav_mono_time)),
+                         (int)(timestamp_want_get - timestamp_out_)
+                        );
+
+        vc->video_play_delay = ((current_time_monotonic(vc->av->toxav_mono_time) +
+                                 vc->timestamp_difference_to_sender__for_video) - timestamp_out_);
+        vc->video_play_delay_real = vc->video_play_delay + vc->video_decoder_caused_delay_ms;
+
         vc->video_frame_buffer_entries = (uint32_t)tsb_size((TSBuffer *)vc->vbuf_raw);
 
-        LOGGER_DEBUG(vc->log, "seq:%d FC:%d min=%d max=%d want=%d got=%d diff=%d rm=%d pdelay=%d adj=%d dts=%d rtt=%d",
-                     (int)header_v3_0->sequnum,
-                     (int)tsb_size((TSBuffer *)vc->vbuf_raw),
-                     timestamp_min,
-                     timestamp_max,
-                     (int)timestamp_want_get,
-                     (int)timestamp_out_,
-                     ((int)timestamp_want_get - (int)timestamp_out_),
-                     (int)removed_entries,
-                     (int)vc->video_play_delay,
-                     (int)vc->timestamp_difference_adjustment,
-                     (int)vc->timestamp_difference_to_sender,
-                     (int)vc->rountrip_time_ms);
+        if (removed_entries > 0) {
+
+            LOGGER_API_DEBUG(tox,
+                             "seq:%d FC:%d min=%d max=%d want=%d hgot=%d got=%d diff=%d rm=%d pdelay=%d pdelayr=%d adj=%d dts=%d rtt=%d decoder_delay=%d",
+                             (int)header_v3_0->sequnum,
+                             (int)tsb_size((TSBuffer *)vc->vbuf_raw),
+                             timestamp_min,
+                             timestamp_max,
+                             (int)timestamp_want_get,
+                             (int)header_v3_0->frame_record_timestamp,
+                             (int)timestamp_out_,
+                             ((int)timestamp_want_get - (int)timestamp_out_),
+                             (int)removed_entries,
+                             (int)vc->video_play_delay,
+                             (int)vc->video_play_delay_real,
+                             (int)vc->timestamp_difference_adjustment,
+                             (int)vc->timestamp_difference_to_sender__for_video,
+                             (int)vc->rountrip_time_ms,
+                             (int)vc->video_decoder_caused_delay_ms);
+        }
 
         uint16_t buf_size = tsb_size((TSBuffer *)vc->vbuf_raw);
         int32_t diff_want_to_got = (int)timestamp_want_get - (int)timestamp_out_;
 
 
-        LOGGER_DEBUG(vc->log, "values:diff_to_sender=%d adj=%d tsb_range=%d bufsize=%d",
-                     (int)vc->timestamp_difference_to_sender, (int)vc->timestamp_difference_adjustment,
-                     (int)vc->tsb_range_ms,
-                     (int)buf_size);
+        LOGGER_API_DEBUG(tox, "values:diff_to_sender=%d adj=%d tsb_range=%d bufsize=%d",
+                         (int)vc->timestamp_difference_to_sender__for_video, (int)vc->timestamp_difference_adjustment,
+                         (int)vc->tsb_range_ms,
+                         (int)buf_size);
 
 
         if (vc->startup_video_timespan > 0) {
@@ -513,12 +674,37 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
 
 
 
-        // TODO: make it available to the audio session
+        // TODO: calculate the delay for the audio stream, and pass it back
         // bad hack -> make better!
-        *timestamp_difference_adjustment_ = vc->timestamp_difference_adjustment;
+        // ----------------------------------------
+        // ----------------------------------------
+        // ----------------------------------------
+        int32_t delay_audio_stream_relative_to_video_stream = (vc->video_decoder_buffer_ms + vc->video_decoder_add_delay_ms);
+        //if ((vc->video_decoder_add_delay_ms < 0) && ((-(vc->video_decoder_add_delay_ms)) > vc->video_decoder_buffer_ms))
+        //{
+        //    delay_audio_stream_relative_to_video_stream = 0;
+        //}
+
+        uint32_t video_decoder_caused_delay_ms_mean_value_used = vc->video_decoder_caused_delay_ms_mean_value;
+        if (video_decoder_caused_delay_ms_mean_value_used > 300)
+        {
+            video_decoder_caused_delay_ms_mean_value_used = 300;
+        }
+
+        *timestamp_difference_adjustment_for_audio = vc->timestamp_difference_adjustment -
+                delay_audio_stream_relative_to_video_stream -
+                vc->video_decoder_caused_delay_ms_mean_value;
+        LOGGER_API_DEBUG(tox, "want_remote_video_ts:v:003=%d", (int)*timestamp_difference_adjustment_for_audio);
+        LOGGER_API_DEBUG(tox, "VV:01:%d", (int)vc->video_decoder_buffer_ms);
+        LOGGER_API_DEBUG(tox, "VV:02:%d %d", (int)*timestamp_difference_adjustment_for_audio, (int)vc->timestamp_difference_adjustment);
+        LOGGER_API_DEBUG(tox, "VV:03:%d %d", (int)vc->video_decoder_add_delay_ms, (int)vc->video_decoder_caused_delay_ms_mean_value);
+        LOGGER_API_DEBUG(tox, "VV:04:%d %d", (int)delay_audio_stream_relative_to_video_stream, (int)vc->video_decoder_buffer_ms);
+        // ----------------------------------------
+        // ----------------------------------------
+        // ----------------------------------------
 
 
-        LOGGER_DEBUG(vc->log, "--VSEQ:%d", (int)header_v3_0->sequnum);
+        LOGGER_API_DEBUG(tox, "--VSEQ:%d", (int)header_v3_0->sequnum);
 
         data_type = (uint8_t)((frame_flags & RTP_KEY_FRAME) != 0);
         h264_encoded_video_frame = (uint8_t)((frame_flags & RTP_ENCODER_IS_H264) != 0);
@@ -542,7 +728,7 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
 
         if ((int32_t)header_v3_0->sequnum < (int32_t)vc->last_seen_fragment_seqnum) {
             // drop frame with too old sequence number
-            LOGGER_WARNING(vc->log, "skipping incoming video frame (0) with sn=%d lastseen=%d old_frames_count=%d",
+            LOGGER_API_DEBUG(tox, "skipping incoming video frame (0) with sn=%d lastseen=%d old_frames_count=%d",
                            (int)header_v3_0->sequnum,
                            (int)vc->last_seen_fragment_seqnum,
                            (int)vc->count_old_video_frames_seen);
@@ -551,6 +737,7 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
 
             if ((int32_t)(header_v3_0->sequnum + 1) != (int32_t)vc->last_seen_fragment_seqnum) {
                 // TODO: check why we often get exactly the previous video frame here?!?!
+                LOGGER_API_DEBUG(tox, "got previous seq number");
             }
 
             if (vc->count_old_video_frames_seen > 6) {
@@ -558,10 +745,12 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
                 // a seqnum rollover or something else. just play those frames then
                 vc->last_seen_fragment_seqnum = (int32_t)header_v3_0->sequnum;
                 vc->count_old_video_frames_seen = 0;
+                LOGGER_API_DEBUG(tox, "count_old_video_frames_seen > 6");
             }
 
             free(p);
             pthread_mutex_unlock(vc->queue_mutex);
+            LOGGER_API_DEBUG(tox, "un_lock");
             return 0;
         }
 
@@ -569,9 +758,7 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
             int32_t missing_frames_count = (int32_t)header_v3_0->sequnum -
                                            (int32_t)(vc->last_seen_fragment_seqnum + 1);
 
-
-            const Messenger *mm = (Messenger *)(vc->av->m);
-            const Messenger_Options *mo = (Messenger_Options *) & (mm->options);
+            LOGGER_API_DEBUG(tox, "missing some video frames: missing count=%d", (int)missing_frames_count);
 
 #define NORMAL_MISSING_FRAME_COUNT_TOLERANCE 0
 #define WHEN_SKIPPING_MISSING_FRAME_COUNT_TOLERANCE 2
@@ -590,12 +777,14 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
                 //       kicked out of the ringbuffer because the sender is sending at too much FPS
                 //       which out client cant handle. so in the future signal sender to send less FPS!
 
-                LOGGER_WARNING(vc->log, "missing? sn=%d lastseen=%d",
+#ifndef RPIZEROW
+                LOGGER_API_ERROR(tox, "missing? sn=%d lastseen=%d",
                                (int)header_v3_0->sequnum,
                                (int)vc->last_seen_fragment_seqnum);
 
 
-                LOGGER_DEBUG(vc->log, "missing %d video frames (m1)", (int)missing_frames_count);
+                LOGGER_API_ERROR(tox, "missing %d video frames (m1)", (int)missing_frames_count);
+#endif
 
                 if (vc->video_decoder_codec_used != TOXAV_ENCODER_CODEC_USED_H264) {
                     rc = vpx_codec_decode(vc->decoder, NULL, 0, NULL, VPX_DL_REALTIME);
@@ -603,7 +792,9 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
 
                 // HINT: give feedback that we lost some bytes (based on the size of this frame)
                 bwc_add_lost_v3(bwc, (uint32_t)(header_v3_0->data_length_full * missing_frames_count), true);
-                LOGGER_ERROR(vc->log, "BWC:lost:002:missing count=%d", (int)missing_frames_count);
+#ifndef RPIZEROW
+                LOGGER_API_ERROR(tox, "BWC:lost:002:missing count=%d", (int)missing_frames_count);
+#endif
             }
         }
 
@@ -612,31 +803,9 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
         vc->count_old_video_frames_seen = 0;
         vc->last_seen_fragment_seqnum = header_v3_0->sequnum;
 
-        if (skip_video_flag == 1) {
-#if 1
-
-            if ((int)data_type != (int)video_frame_type_KEYFRAME) {
-                free(p);
-                LOGGER_ERROR(vc->log, "skipping incoming video frame (1)");
-
-                if (vc->video_decoder_codec_used != TOXAV_ENCODER_CODEC_USED_H264) {
-                    rc = vpx_codec_decode(vc->decoder, NULL, 0, NULL, VPX_DL_REALTIME);
-                }
-
-                // HINT: give feedback that we lost some bytes (based on the size of this frame)
-                bwc_add_lost_v3(bwc, header_v3_0->data_length_full, false);
-                LOGGER_ERROR(vc->log, "BWC:lost:003");
-
-                pthread_mutex_unlock(vc->queue_mutex);
-                return 0;
-            }
-
-#endif
-        } else {
-            // NOOP
-        }
-
+        //* PREVIOUS UNLOCK *//
         pthread_mutex_unlock(vc->queue_mutex);
+        LOGGER_API_DEBUG(tox, "un_lock");
 
         const struct RTPHeader *header_v3 = (void *) & (p->header);
 
@@ -655,18 +824,17 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
 
         // HINT: give feedback that we lost some bytes
         if (header_v3->received_length_full < full_data_len) {
-            // const Messenger *mm = (Messenger *)(vc->av->m);
-            // const Messenger_Options *mo = (Messenger_Options *) & (mm->options);
 
             bwc_add_lost_v3(bwc, (full_data_len - header_v3->received_length_full), false);
 
             float percent_lost = 0.0f;
 
             if (header_v3->received_length_full > 0) {
-                percent_lost = (float)full_data_len / (float)header_v3->received_length_full;
+                percent_lost = 100.0f * (1.0f - ((float)header_v3->received_length_full / (float)full_data_len));
             }
 
-            LOGGER_ERROR(vc->log, "BWC:lost:004:lost bytes=%d recevied=%d full=%d per=%.3f",
+            LOGGER_API_ERROR(tox, "BWC:lost:004:seq=%d,lost bytes=%d recevied=%d full=%d per=%.3f",
+                         (int)header_v3->sequnum,
                          (int)(full_data_len - header_v3->received_length_full),
                          (int)header_v3->received_length_full,
                          (int)full_data_len,
@@ -702,30 +870,6 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
 
 #endif
 
-#if 0
-
-            if ((percent_recvd < 100) && (have_requested_index_frame == false)) {
-                if ((vc->last_requested_keyframe_ts + VIDEO_MIN_REQUEST_KEYFRAME_INTERVAL_MS_FOR_KF)
-                        < current_time_monotonic(m->mono_time)) {
-                    // if keyframe received has less than 100% of the data, request a new keyframe
-                    // from the sender
-                    uint32_t pkg_buf_len = 2;
-                    uint8_t pkg_buf[pkg_buf_len];
-                    pkg_buf[0] = PACKET_TOXAV_COMM_CHANNEL;
-                    pkg_buf[1] = PACKET_TOXAV_COMM_CHANNEL_REQUEST_KEYFRAME;
-
-                    if (-1 == send_custom_lossless_packet(m, vc->friend_number, pkg_buf, pkg_buf_len)) {
-                        LOGGER_WARNING(vc->log,
-                                       "PACKET_TOXAV_COMM_CHANNEL_REQUEST_KEYFRAME:RTP send failed");
-                    } else {
-                        LOGGER_WARNING(vc->log,
-                                       "PACKET_TOXAV_COMM_CHANNEL_REQUEST_KEYFRAME:RTP Sent.");
-                        vc->last_requested_keyframe_ts = current_time_monotonic(m->mono_time);
-                    }
-                }
-            }
-
-#endif
 
         } else {
             LOGGER_DEBUG(vc->log, "RTP_RECV:sn=%ld fn=%ld pct=%d%% len=%ld recv_len=%ld",
@@ -756,7 +900,7 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
             }
         }
 
-        // HINT: somtimes the singaling of H264 capability does not work
+        // HINT: sometimes the singaling of H264 capability does not work
         //       as workaround send it again on the first 30 frames
 
         if (DISABLE_H264_DECODER_FEATURE != 1) {
@@ -769,7 +913,7 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
                 pkg_buf[0] = PACKET_TOXAV_COMM_CHANNEL;
                 pkg_buf[1] = PACKET_TOXAV_COMM_CHANNEL_HAVE_H264_VIDEO;
 
-                int result = send_custom_lossless_packet(m, vc->friend_number, pkg_buf, pkg_buf_len);
+                int result = video_send_custom_lossless_packet(tox, vc->friend_number, pkg_buf, pkg_buf_len);
                 LOGGER_ERROR(vc->log, "PACKET_TOXAV_COMM_CHANNEL_HAVE_H264_VIDEO=%d\n", (int)result);
                 // HINT: tell friend that we have H264 decoder capabilities -------
 
@@ -778,7 +922,7 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
 
         if (vc->video_decoder_codec_used != TOXAV_ENCODER_CODEC_USED_H264) {
             // LOGGER_ERROR(vc->log, "DEC:VP8------------");
-            decode_frame_vpx(vc, m, skip_video_flag, a_r_timestamp,
+            decode_frame_vpx(vc, tox, skip_video_flag, a_r_timestamp,
                              a_l_timestamp,
                              v_r_timestamp, v_l_timestamp,
                              header_v3, p,
@@ -786,19 +930,11 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
                              &ret_value);
         } else {
             // LOGGER_ERROR(vc->log, "DEC:H264------------");
-#ifdef RASPBERRY_PI_OMX
-            decode_frame_h264_omx_raspi(vc, m, skip_video_flag, a_r_timestamp,
-                                        a_l_timestamp,
-                                        v_r_timestamp, v_l_timestamp,
-                                        header_v3, p,
-                                        rc, full_data_len,
-                                        &ret_value);
-#else
 
 #ifdef DEBUG_SHOW_H264_DECODING_TIME
-            uint32_t start_time_ms = current_time_monotonic(m->mono_time);
+            uint32_t start_time_ms = current_time_monotonic(vc->av->toxav_mono_time);
 #endif
-            decode_frame_h264(vc, m, skip_video_flag, a_r_timestamp,
+            decode_frame_h264(vc, tox, skip_video_flag, a_r_timestamp,
                               a_l_timestamp,
                               v_r_timestamp, v_l_timestamp,
                               header_v3, p,
@@ -806,27 +942,34 @@ uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_
                               &ret_value);
 
 #ifdef DEBUG_SHOW_H264_DECODING_TIME
-            uint32_t end_time_ms = current_time_monotonic(m->mono_time);
+            uint32_t end_time_ms = current_time_monotonic(vc->av->toxav_mono_time);
 
             if ((int)(end_time_ms - start_time_ms) > 4) {
-                LOGGER_WARNING(vc->log, "decode_frame_h264: %d ms", (int)(end_time_ms - start_time_ms));
+                LOGGER_API_DEBUG(tox, "decode_frame_h264: %d ms", (int)(end_time_ms - start_time_ms));
             }
 
 #endif
-
-#endif
         }
+
+//        LOGGER_DEBUG(vc->log, "vciter__01:%d",
+//                            (int)current_time_monotonic(m->mono_time) - global___ts1);
+
+        //* NEW UNLOCK *//
+        // pthread_mutex_unlock(vc->queue_mutex);
 
         return ret_value;
     } else {
         // no frame data available
         // LOGGER_WARNING(vc->log, "Error decoding video: rb_read");
         if (removed_entries > 0) {
-            LOGGER_WARNING(vc->log, "removed entries=%d", (int)removed_entries);
+            LOGGER_API_ERROR(tox, "no frame read, but removed entries=%d", (int)removed_entries);
         }
     }
 
     pthread_mutex_unlock(vc->queue_mutex);
+
+    // LOGGER_DEBUG(vc->log, "vciter__02:%d",
+    //                    (int)current_time_monotonic(m->mono_time) - global___ts1);
 
     return ret_value;
 }
@@ -844,6 +987,10 @@ int vc_queue_message(Mono_Time *mono_time, void *vcp, struct RTPMessage *msg)
      * this function gets called from handle_rtp_packet()
      */
     if (!vcp || !msg) {
+        if (msg) {
+            free(msg);
+        }
+
         return -1;
     }
 
@@ -863,6 +1010,12 @@ int vc_queue_message(Mono_Time *mono_time, void *vcp, struct RTPMessage *msg)
         free(msg);
         return -1;
     }
+
+
+    LOGGER_API_DEBUG(vc->av->tox, "want_lock");
+    pthread_mutex_lock(vc->queue_mutex);
+    LOGGER_API_DEBUG(vc->av->tox, "got_lock");
+
 
     // calculate mean "frame incoming every x milliseconds" --------------
     if (vc->incoming_video_frames_gap_last_ts > 0) {
@@ -896,9 +1049,7 @@ int vc_queue_message(Mono_Time *mono_time, void *vcp, struct RTPMessage *msg)
     vc->incoming_video_frames_gap_last_ts = current_time_monotonic(mono_time);
     // calculate mean "frame incoming every x milliseconds" --------------
 
-    pthread_mutex_lock(vc->queue_mutex);
-
-    LOGGER_DEBUG(vc->log, "TT:queue:V:fragnum=%ld", (long)header_v3->fragment_num);
+    LOGGER_API_DEBUG(vc->av->tox, "TT:queue:V:fragnum=%ld", (long)header_v3->fragment_num);
 
     // older clients do not send the frame record timestamp
     // compensate by using the frame sennt timestamp
@@ -996,29 +1147,14 @@ int vc_queue_message(Mono_Time *mono_time, void *vcp, struct RTPMessage *msg)
             }
 
 
-#ifdef USE_TS_BUFFER_FOR_VIDEO
+            LOGGER_API_DEBUG(vc->av->tox, "vc_queue_msg:tsb_write : %d", (uint32_t)header->frame_record_timestamp);
+
             struct RTPMessage *msg_old = tsb_write((TSBuffer *)vc->vbuf_raw, msg,
                                                    (uint64_t)header->flags,
                                                    (uint32_t)header->frame_record_timestamp);
-#else
-            struct RTPMessage *msg_old = rb_write((RingBuffer *)vc->vbuf_raw, msg, (uint64_t)header->flags);
-#endif
 
             if (msg_old) {
-
-                // HINT: tell sender to turn down video FPS -------------
-#if 0
-                uint32_t pkg_buf_len = 3;
-                uint8_t pkg_buf[pkg_buf_len];
-                pkg_buf[0] = PACKET_TOXAV_COMM_CHANNEL;
-                pkg_buf[1] = PACKET_TOXAV_COMM_CHANNEL_LESS_VIDEO_FPS;
-                pkg_buf[2] = 3; // skip every 3rd video frame and dont encode and dont sent it
-
-                int result = send_custom_lossless_packet(vc->av->m, vc->friend_number, pkg_buf, pkg_buf_len);
-                // HINT: tell sender to turn down video FPS -------------
-#endif
-                LOGGER_DEBUG(vc->log, "FPATH:%d kicked out", (int)msg_old->header.sequnum);
-
+                LOGGER_API_DEBUG(vc->av->tox, "FPATH:%d kicked out", (int)msg_old->header.sequnum);
                 free(msg_old);
             }
         } else {
@@ -1028,11 +1164,7 @@ int vc_queue_message(Mono_Time *mono_time, void *vcp, struct RTPMessage *msg)
             }
         }
     } else {
-#ifdef USE_TS_BUFFER_FOR_VIDEO
         free(tsb_write((TSBuffer *)vc->vbuf_raw, msg, 0, current_time_monotonic(mono_time)));
-#else
-        free(rb_write((RingBuffer *)vc->vbuf_raw, msg, 0));
-#endif
     }
 
 
@@ -1068,6 +1200,7 @@ int vc_queue_message(Mono_Time *mono_time, void *vcp, struct RTPMessage *msg)
     vc->linfts = current_time_monotonic(mono_time);
 
     pthread_mutex_unlock(vc->queue_mutex);
+    LOGGER_API_DEBUG(vc->av->tox, "un_lock");
 
     return 0;
 }
@@ -1077,14 +1210,19 @@ int vc_queue_message(Mono_Time *mono_time, void *vcp, struct RTPMessage *msg)
 int vc_reconfigure_encoder(Logger *log, VCSession *vc, uint32_t bit_rate, uint16_t width, uint16_t height,
                            int16_t kf_max_dist)
 {
+    int ret = 0;
+    
     if (vc->video_encoder_coded_used == TOXAV_ENCODER_CODEC_USED_VP8) {
-        return vc_reconfigure_encoder_vpx(log, vc, bit_rate, width, height, kf_max_dist);
+        ret = vc_reconfigure_encoder_vpx(log, vc, bit_rate, width, height, kf_max_dist);
     } else {
 #ifdef RASPBERRY_PI_OMX
-        return vc_reconfigure_encoder_h264_omx_raspi(log, vc, bit_rate, width, height, kf_max_dist);
+        ret = vc_reconfigure_encoder_h264_omx_raspi(log, vc, bit_rate, width, height, kf_max_dist);
 #else
-        return vc_reconfigure_encoder_h264(log, vc, bit_rate, width, height, kf_max_dist);
+        ret = vc_reconfigure_encoder_h264(log, vc, bit_rate, width, height, kf_max_dist);
 #endif
     }
+
+    vc->video_encoder_coded_used_prev = vc->video_encoder_coded_used;
+    return ret;
 }
 

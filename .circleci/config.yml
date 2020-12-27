@@ -3,7 +3,7 @@ version: 2
 
 workflows:
   version: 2
-  build_linux:
+  clang-sanitizers:
     jobs:
       - build
 
@@ -23,12 +23,14 @@ jobs:
             cmake
             libconfig-dev
             libgtest-dev
+            llvm-dev
             ninja-build
             pkg-config
             zip grep file ca-certificates autotools-dev autoconf automake
             git bc wget rsync cmake make pkg-config yasm libtool
             libasound2-dev libv4l-dev ssh gzip tar
             coreutils
+
       - checkout
       - restore_cache:
           key: ctc-library-dependencies-v3-{{ .Branch }}

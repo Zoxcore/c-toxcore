@@ -1,21 +1,6 @@
-/*
+/* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright © 2016-2018 The TokTok team.
  * Copyright © 2013-2015 Tox project.
- *
- * This file is part of Tox, the free peer to peer instant messenger.
- *
- * Tox is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Tox is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Tox.  If not, see <http://www.gnu.org/licenses/>.
  */
 #ifndef C_TOXCORE_TOXAV_AUDIO_H
 #define C_TOXCORE_TOXAV_AUDIO_H
@@ -31,7 +16,7 @@
 #include <pthread.h>
 
 
-#define AUDIO_JITTERBUFFER_COUNT 100 // (5) // ORIG = 3
+#define AUDIO_JITTERBUFFER_COUNT 500 // ~ (5ms * AUDIO_JITTERBUFFER_COUNT) --> to hold that many ms audio data for audio-to-video delay
 #define AUDIO_JITTERBUFFER_FILL_THRESHOLD (98) // this should be lower than the above value!
 #define AUDIO_JITTERBUFFER_SKIP_THRESHOLD (99)
 
@@ -43,8 +28,13 @@
 #define AUDIO_START_SAMPLING_RATE (48000)
 #define AUDIO_START_BITRATE_RATE (48000)
 #define AUDIO_START_CHANNEL_COUNT (2)
-#define AUDIO_OPUS_PACKET_LOSS_PERC (40) // allow upto 50% loss of audio packets
+#define AUDIO_OPUS_PACKET_LOSS_PERC (2) // allow upto XX % loss of audio packets
+
+#ifdef RPIZEROW
+#define AUDIO_OPUS_COMPLEXITY (0)
+#else
 #define AUDIO_OPUS_COMPLEXITY (10)
+#endif
 
 #define AUDIO_DECODER__START_SAMPLING_RATE (48000)
 #define AUDIO_DECODER__START_CHANNEL_COUNT (2)
@@ -64,7 +54,6 @@
 
 typedef struct ACSession_s {
     Mono_Time *mono_time;
-    const Logger *log;
 
     /* encoding */
     OpusEncoder *encoder;
@@ -88,23 +77,31 @@ typedef struct ACSession_s {
     int64_t timestamp_difference_to_sender;
     uint64_t last_incoming_frame_ts;
     uint8_t encoder_frame_has_record_timestamp;
+    uint32_t audio_received_first_frame;
 
     pthread_mutex_t queue_mutex[1];
 
     ToxAV *av;
+    Tox *tox;
     uint32_t friend_number;
     /* Audio frame receive callback */
     toxav_audio_receive_frame_cb *acb;
     void *acb_user_data;
+
+    toxav_audio_receive_frame_pts_cb *acb_pts;
+    void *acb_pts_user_data;
 } ACSession;
 
-ACSession *ac_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t friend_number,
-                  toxav_audio_receive_frame_cb *cb, void *cb_data);
+ACSession *ac_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, Tox *tox, uint32_t friend_number,
+                  toxav_audio_receive_frame_cb *cb, void *cb_data,
+                  toxav_audio_receive_frame_pts_cb *cb_pts, void *cb_pts_data);
 void ac_kill(ACSession *ac);
 uint8_t ac_iterate(ACSession *ac, uint64_t *a_r_timestamp, uint64_t *a_l_timestamp, uint64_t *v_r_timestamp,
                    uint64_t *v_l_timestamp,
                    int64_t *timestamp_difference_adjustment_,
-                   int64_t *timestamp_difference_to_sender_);
+                   int64_t *timestamp_difference_to_sender_,
+                   int video_send_cap,
+                   int32_t *video_has_rountrip_time_ms);
 int ac_queue_message(Mono_Time *mono_time, void *acp, struct RTPMessage *msg);
 int ac_reconfigure_encoder(ACSession *ac, int32_t bit_rate, int32_t sampling_rate, uint8_t channels);
 

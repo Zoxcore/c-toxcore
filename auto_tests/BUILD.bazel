@@ -1,3 +1,5 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
 cc_library(
     name = "check_compat",
     testonly = True,
@@ -10,20 +12,22 @@ cc_library(
     hdrs = ["run_auto_test.h"],
 )
 
-test_sizes = {
-    "conference_peer_nick_test": "medium",
+flaky_tests = {
+    "crypto_core_test": True,
+    "lan_discovery_test": True,
+    "tcp_relay_test": True,
 }
 
 [cc_test(
     name = src[:-2],
-    size = test_sizes.get(
-        src[:-2],
-        "small",
-    ),
+    size = "small",
     srcs = [src],
     args = ["$(location %s)" % src],
-    copts = ["-Wno-sign-compare"],
     data = glob(["data/*"]),
+    flaky = flaky_tests.get(
+        src[:-2],
+        False,
+    ),
     deps = [
         ":check_compat",
         ":run_auto_test",
@@ -33,4 +37,8 @@ test_sizes = {
         "//c-toxcore/toxcore:DHT_srcs",
         "//c-toxcore/toxencryptsave",
     ],
-) for src in glob(["*_test.c"])]
+) for src in glob(
+    ["*_test.c"],
+    # TODO(iphydf): Fix this test and re-enable it.
+    exclude = ["tcp_relay_test.c"],
+)]

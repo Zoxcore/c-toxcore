@@ -1,3 +1,4 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
 load("//tools:no_undefined.bzl", "cc_library")
 
 filegroup(
@@ -110,24 +111,20 @@ cc_library(
     deps = [
         ":ring_buffer",
         "//c-toxcore/toxcore:Messenger",
+        "//c-toxcore/toxcore:toxcore",
     ],
 )
 
 cc_library(
     name = "rtp",
     srcs = ["rtp.c"],
-    hdrs = [
-        "audio.h",
-        "rtp.h",
-        "toxav.h",
-        "video.h",
-    ],
-    copts = ["-Wno-error"],
+    hdrs = ["rtp.h"],
     deps = [
         ":bwcontroller",
         ":dummy_ntp",
         "@libvpx",
         "@opus",
+        "//c-toxcore/toxcore",
     ],
 )
 
@@ -209,4 +206,24 @@ cc_library(
         ":video",
         ":vpx_codec",
     ],
+)
+
+CIMPLE_SRCS = glob(
+    [
+        "*.c",
+        "*.h",
+    ],
+    exclude = [
+        "*.api.h",
+        "toxav.h",
+    ],
+)
+
+sh_test(
+    name = "cimple_test",
+    size = "small",
+    srcs = ["//hs-tokstyle/tools:check-cimple"],
+    args = ["$(location %s)" % f for f in CIMPLE_SRCS],
+    data = CIMPLE_SRCS,
+    tags = ["manual"],
 )

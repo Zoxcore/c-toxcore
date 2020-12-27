@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.65])
-AC_INIT([tox], [0.2.8])
+AC_INIT([tox], [0.2.11])
 AC_CONFIG_AUX_DIR(configure_aux)
 AC_CONFIG_SRCDIR([toxcore/net_crypto.c])
 AC_CONFIG_HEADERS([config.h])
@@ -23,7 +23,9 @@ BUILD_AV="yes"
 BUILD_TESTING="yes"
 
 ON_RASPI="no"
+TOX_LOGGER="no"
 
+NCURSES_FOUND="no"
 LIBCONFIG_FOUND="no"
 WANT_NACL="no"
 ADD_NACL_OBJECTS_TO_PKGCONFIG="yes"

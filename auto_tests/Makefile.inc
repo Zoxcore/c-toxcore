@@ -3,6 +3,7 @@ if BUILD_TESTS
 TESTS = \
 	bootstrap_test \
 	conference_double_invite_test \
+	conference_invite_merge_test \
 	conference_peer_nick_test \
 	conference_simple_test \
 	conference_test \
@@ -14,6 +15,9 @@ TESTS = \
 	file_transfer_test \
 	friend_connection_test \
 	friend_request_test \
+	invalid_tcp_proxy_test \
+	invalid_udp_proxy_test \
+	lan_discovery_test \
 	lossless_packet_test \
 	lossy_packet_test \
 	messenger_test \
@@ -29,7 +33,6 @@ TESTS = \
 	set_name_test \
 	set_status_message_test \
 	skeleton_test \
-	tcp_relay_test \
 	TCP_test \
 	tox_many_tcp_test \
 	tox_many_test \
@@ -37,6 +40,9 @@ TESTS = \
 	tox_strncasecmp_test \
 	typing_test \
 	version_test
+
+# TODO(iphydf): Fix this test and re-enable it.
+#	tcp_relay_test
 
 AUTOTEST_CFLAGS = \
 	$(LIBSODIUM_CFLAGS) \
@@ -54,7 +60,7 @@ AUTOTEST_LDADD = \
 
 
 if BUILD_AV
-TESTS += toxav_basic_test toxav_many_test
+TESTS += conference_av_test toxav_basic_test toxav_many_test toxav_many_sep_iter_test
 AUTOTEST_LDADD += libtoxav.la
 endif
 
@@ -67,6 +73,10 @@ bootstrap_test_LDADD = $(AUTOTEST_LDADD)
 conference_double_invite_test_SOURCES = ../auto_tests/conference_double_invite_test.c
 conference_double_invite_test_CFLAGS = $(AUTOTEST_CFLAGS)
 conference_double_invite_test_LDADD = $(AUTOTEST_LDADD)
+
+conference_invite_merge_test_SOURCES = ../auto_tests/conference_invite_merge_test.c
+conference_invite_merge_test_CFLAGS = $(AUTOTEST_CFLAGS)
+conference_invite_merge_test_LDADD = $(AUTOTEST_LDADD)
 
 conference_peer_nick_test_SOURCES = ../auto_tests/conference_peer_nick_test.c
 conference_peer_nick_test_CFLAGS = $(AUTOTEST_CFLAGS)
@@ -111,6 +121,18 @@ friend_connection_test_LDADD = $(AUTOTEST_LDADD)
 friend_request_test_SOURCES = ../auto_tests/friend_request_test.c
 friend_request_test_CFLAGS = $(AUTOTEST_CFLAGS)
 friend_request_test_LDADD = $(AUTOTEST_LDADD)
+
+invalid_tcp_proxy_test_SOURCES = ../auto_tests/invalid_tcp_proxy_test.c
+invalid_tcp_proxy_test_CFLAGS = $(AUTOTEST_CFLAGS)
+invalid_tcp_proxy_test_LDADD = $(AUTOTEST_LDADD)
+
+invalid_udp_proxy_test_SOURCES = ../auto_tests/invalid_udp_proxy_test.c
+invalid_udp_proxy_test_CFLAGS = $(AUTOTEST_CFLAGS)
+invalid_udp_proxy_test_LDADD = $(AUTOTEST_LDADD)
+
+lan_discovery_test_SOURCES = ../auto_tests/lan_discovery_test.c
+lan_discovery_test_CFLAGS = $(AUTOTEST_CFLAGS)
+lan_discovery_test_LDADD = $(AUTOTEST_LDADD)
 
 lossless_packet_test_SOURCES = ../auto_tests/lossless_packet_test.c
 lossless_packet_test_CFLAGS = $(AUTOTEST_CFLAGS)
@@ -206,6 +228,10 @@ version_test_LDADD = $(AUTOTEST_LDADD)
 
 if BUILD_AV
 
+conference_av_test_SOURCES = ../auto_tests/conference_av_test.c
+conference_av_test_CFLAGS = $(AUTOTEST_CFLAGS)
+conference_av_test_LDADD = $(AUTOTEST_LDADD)
+
 toxav_basic_test_SOURCES = ../auto_tests/toxav_basic_test.c
 toxav_basic_test_CFLAGS = $(AUTOTEST_CFLAGS)
 toxav_basic_test_LDADD = $(AUTOTEST_LDADD) $(AV_LIBS)
@@ -213,6 +239,10 @@ toxav_basic_test_LDADD = $(AUTOTEST_LDADD) $(AV_LIBS)
 toxav_many_test_SOURCES = ../auto_tests/toxav_many_test.c
 toxav_many_test_CFLAGS = $(AUTOTEST_CFLAGS)
 toxav_many_test_LDADD = $(AUTOTEST_LDADD)
+
+toxav_many_sep_iter_test_SOURCES = ../auto_tests/toxav_many_sep_iter_test.c
+toxav_many_sep_iter_test_CFLAGS = $(AUTOTEST_CFLAGS)
+toxav_many_sep_iter_test_LDADD = $(AUTOTEST_LDADD)
 
 endif
 

@@ -1,22 +1,7 @@
 %{
-/*
+/* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright © 2016-2018 The TokTok team.
  * Copyright © 2013-2015 Tox project.
- *
- * This file is part of Tox, the free peer to peer instant messenger.
- *
- * Tox is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Tox is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Tox.  If not, see <http://www.gnu.org/licenses/>.
  */
 #ifndef C_TOXCORE_TOXAV_TOXAV_H
 #define C_TOXCORE_TOXAV_TOXAV_H
@@ -53,8 +38,8 @@ extern "C" {
 
 /** \subsection threading Threading implications
  *
- * Unlike the Core API, this API is fully thread-safe. The library will ensure
- * the proper synchronization of parallel calls.
+ * Only ${toxAV.iterate} is thread-safe, all other functions must run from the
+ * tox thread.
  *
  * A common way to run ToxAV (multiple or single instance) is to have a thread,
  * separate from tox instance thread, running a simple ${toxAV.iterate} loop,
@@ -653,6 +638,39 @@ int toxav_join_av_groupchat(Tox *tox, uint32_t friendnumber, const uint8_t *data
  */
 int toxav_group_send_audio(Tox *tox, uint32_t groupnumber, const int16_t *pcm, unsigned int samples, uint8_t channels,
                            uint32_t sample_rate);
+
+/* Enable A/V in a groupchat.
+ *
+ * A/V must be enabled on a groupchat for audio to be sent to it and for
+ * received audio to be handled.
+ *
+ * An A/V group created with toxav_add_av_groupchat or toxav_join_av_groupchat
+ * will start with A/V enabled.
+ *
+ * An A/V group loaded from a savefile will start with A/V disabled.
+ *
+ * return 0 on success.
+ * return -1 on failure.
+ *
+ * Audio data callback format (same as the one for toxav_add_av_groupchat()):
+ *   audio_callback(Tox *tox, uint32_t groupnumber, uint32_t peernumber, const int16_t *pcm, unsigned int samples, uint8_t channels, uint32_t sample_rate, void *userdata)
+ *
+ * Note that total size of pcm in bytes is equal to (samples * channels * sizeof(int16_t)).
+ */
+int toxav_groupchat_enable_av(Tox *tox, uint32_t groupnumber,
+                              void (*audio_callback)(void *, uint32_t, uint32_t, const int16_t *, unsigned int, uint8_t, uint32_t, void *),
+                              void *userdata);
+
+/* Disable A/V in a groupchat.
+ *
+ * return 0 on success.
+ * return -1 on failure.
+ */
+int toxav_groupchat_disable_av(Tox *tox, uint32_t groupnumber);
+
+/* Return whether A/V is enabled in the groupchat.
+ */
+bool toxav_groupchat_av_enabled(Tox *tox, uint32_t groupnumber);
 
 #ifdef __cplusplus
 }

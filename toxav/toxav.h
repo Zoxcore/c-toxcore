@@ -1,21 +1,6 @@
-/*
+/* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright © 2016-2018 The TokTok team.
  * Copyright © 2013-2015 Tox project.
- *
- * This file is part of Tox, the free peer to peer instant messenger.
- *
- * Tox is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Tox is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Tox.  If not, see <http://www.gnu.org/licenses/>.
  */
 #ifndef C_TOXCORE_TOXAV_TOXAV_H
 #define C_TOXCORE_TOXAV_TOXAV_H
@@ -49,8 +34,8 @@ extern "C" {
  */
 /** \subsection threading Threading implications
  *
- * Unlike the Core API, this API is fully thread-safe. The library will ensure
- * the proper synchronization of parallel calls.
+ * Only toxav_iterate is thread-safe, all other functions must run from the
+ * tox thread.
  *
  * A common way to run ToxAV (multiple or single instance) is to have a thread,
  * separate from tox instance thread, running a simple toxav_iterate loop,
@@ -732,9 +717,30 @@ bool toxav_audio_send_frame(ToxAV *av, uint32_t friend_number, const int16_t *pc
 bool toxav_video_send_frame(ToxAV *av, uint32_t friend_number, uint16_t width, uint16_t height, const uint8_t *y,
                             const uint8_t *u, const uint8_t *v, TOXAV_ERR_SEND_FRAME *error);
 
+/**
+ * Send a video frame to a friend.
+ *
+ * Y - plane should be of size: height * width
+ * U - plane should be of size: (height/2) * (width/2)
+ * V - plane should be of size: (height/2) * (width/2)
+ *
+ * @param friend_number The friend number of the friend to which to send a video
+ * frame.
+ * @param width Width of the frame in pixels.
+ * @param height Height of the frame in pixels.
+ * @param y Y (Luminance) plane data.
+ * @param u U (Chroma) plane data.
+ * @param v V (Chroma) plane data.
+ */
+bool toxav_video_send_frame_age(ToxAV *av, uint32_t friend_number, uint16_t width, uint16_t height, const uint8_t *y,
+                            const uint8_t *u, const uint8_t *v, TOXAV_ERR_SEND_FRAME *error, uint32_t age_ms);
+
 
 bool toxav_video_send_frame_h264(ToxAV *av, uint32_t friend_number, uint16_t width, uint16_t height, const uint8_t *buf,
                                  uint32_t data_len, TOXAV_ERR_SEND_FRAME *error);
+
+bool toxav_video_send_frame_h264_age(ToxAV *av, uint32_t friend_number, uint16_t width, uint16_t height, const uint8_t *buf,
+                                 uint32_t data_len, TOXAV_ERR_SEND_FRAME *error, uint32_t age_ms);
 
 
 /**
@@ -785,6 +791,12 @@ typedef void toxav_audio_receive_frame_cb(ToxAV *av, uint32_t friend_number, con
  */
 void toxav_callback_audio_receive_frame(ToxAV *av, toxav_audio_receive_frame_cb *callback, void *user_data);
 
+
+typedef void toxav_audio_receive_frame_pts_cb(ToxAV *av, uint32_t friend_number, const int16_t *pcm, size_t sample_count,
+        uint8_t channels, uint32_t sampling_rate, void *user_data, uint64_t pts);
+
+void toxav_callback_audio_receive_frame_pts(ToxAV *av, toxav_audio_receive_frame_pts_cb *callback, void *user_data);
+
 /**
  * The function type for the video_receive_frame callback.
  *
@@ -818,8 +830,35 @@ typedef void toxav_video_receive_frame_cb(ToxAV *av, uint32_t friend_number, uin
  */
 void toxav_callback_video_receive_frame(ToxAV *av, toxav_video_receive_frame_cb *callback, void *user_data);
 
+
+
+typedef void toxav_video_receive_frame_pts_cb(ToxAV *av, uint32_t friend_number, uint16_t width, uint16_t height,
+        const uint8_t *y, const uint8_t *u, const uint8_t *v, int32_t ystride, int32_t ustride, int32_t vstride,
+        void *user_data, uint64_t pts);
+
+void toxav_callback_video_receive_frame_pts(ToxAV *av, toxav_video_receive_frame_pts_cb *callback, void *user_data);
+
+
+
+
+
+typedef void toxav_video_receive_frame_h264_cb(ToxAV *av, uint32_t friend_number,
+        const uint8_t *buf, const uint32_t buf_size, void *user_data);
+
+
+/**
+ * Set the callback for the `video_receive_frame_h264` event. Pass NULL to unset.
+ *
+ */
+void toxav_callback_video_receive_frame_h264(ToxAV *av, toxav_video_receive_frame_h264_cb *callback, void *user_data);
+
+
 /**
  * NOTE Compatibility with old toxav group calls. TODO(iphydf): remove
+ *
+ * TODO(iphydf): Use proper new API guidelines for these. E.g. don't use inline
+ * function types, don't have per-callback userdata, especially don't have one
+ * userdata per group.
  */
 /* Create a new toxav group.
  *
@@ -827,12 +866,13 @@ void toxav_callback_video_receive_frame(ToxAV *av, toxav_video_receive_frame_cb 
  * return -1 on failure.
  *
  * Audio data callback format:
- *   audio_callback(Tox *tox, int groupnumber, int peernumber, const int16_t *pcm, unsigned int samples, uint8_t channels, unsigned int sample_rate, void *userdata)
+ *   audio_callback(Tox *tox, uint32_t groupnumber, uint32_t peernumber, const int16_t *pcm, unsigned int samples, uint8_t channels, uint32_t sample_rate, void *userdata)
  *
  * Note that total size of pcm in bytes is equal to (samples * channels * sizeof(int16_t)).
  */
-int toxav_add_av_groupchat(Tox *tox, void (*audio_callback)(void *, uint32_t, uint32_t, const int16_t *, unsigned int,
-                           uint8_t, uint32_t, void *), void *userdata);
+int toxav_add_av_groupchat(Tox *tox,
+                           void (*audio_callback)(void *, uint32_t, uint32_t, const int16_t *, unsigned int, uint8_t, uint32_t, void *),
+                           void *userdata);
 
 /* Join a AV group (you need to have been invited first.)
  *
@@ -840,13 +880,12 @@ int toxav_add_av_groupchat(Tox *tox, void (*audio_callback)(void *, uint32_t, ui
  * returns -1 on failure.
  *
  * Audio data callback format (same as the one for toxav_add_av_groupchat()):
- *   audio_callback(Tox *tox, int groupnumber, int peernumber, const int16_t *pcm, unsigned int samples, uint8_t channels, unsigned int sample_rate, void *userdata)
+ *   audio_callback(Tox *tox, uint32_t groupnumber, uint32_t peernumber, const int16_t *pcm, unsigned int samples, uint8_t channels, uint32_t sample_rate, void *userdata)
  *
  * Note that total size of pcm in bytes is equal to (samples * channels * sizeof(int16_t)).
  */
 int toxav_join_av_groupchat(Tox *tox, uint32_t friendnumber, const uint8_t *data, uint16_t length,
-                            void (*audio_callback)
-                            (void *, uint32_t, uint32_t, const int16_t *, unsigned int, uint8_t, uint32_t, void *),
+                            void (*audio_callback)(void *, uint32_t, uint32_t, const int16_t *, unsigned int, uint8_t, uint32_t, void *),
                             void *userdata);
 
 /* Send audio to the group chat.
@@ -865,14 +904,39 @@ int toxav_join_av_groupchat(Tox *tox, uint32_t friendnumber, const uint8_t *data
 int toxav_group_send_audio(Tox *tox, uint32_t groupnumber, const int16_t *pcm, unsigned int samples, uint8_t channels,
                            uint32_t sample_rate);
 
+/* Enable A/V in a groupchat.
+ *
+ * A/V must be enabled on a groupchat for audio to be sent to it and for
+ * received audio to be handled.
+ *
+ * An A/V group created with toxav_add_av_groupchat or toxav_join_av_groupchat
+ * will start with A/V enabled.
+ *
+ * An A/V group loaded from a savefile will start with A/V disabled.
+ *
+ * return 0 on success.
+ * return -1 on failure.
+ *
+ * Audio data callback format (same as the one for toxav_add_av_groupchat()):
+ *   audio_callback(Tox *tox, uint32_t groupnumber, uint32_t peernumber, const int16_t *pcm, unsigned int samples, uint8_t channels, uint32_t sample_rate, void *userdata)
+ *
+ * Note that total size of pcm in bytes is equal to (samples * channels * sizeof(int16_t)).
+ */
+int toxav_groupchat_enable_av(Tox *tox, uint32_t groupnumber,
+                              void (*audio_callback)(void *, uint32_t, uint32_t, const int16_t *, unsigned int, uint8_t, uint32_t, void *),
+                              void *userdata);
 
-typedef TOXAV_ERR_CALL Toxav_Err_Call;
-typedef TOXAV_ERR_NEW Toxav_Err_New;
-typedef TOXAV_ERR_ANSWER Toxav_Err_Answer;
-typedef TOXAV_ERR_CALL_CONTROL Toxav_Err_Call_Control;
-typedef TOXAV_ERR_BIT_RATE_SET Toxav_Err_Bit_Rate_Set;
-typedef TOXAV_ERR_SEND_FRAME Toxav_Err_Send_Frame;
-typedef TOXAV_CALL_CONTROL Toxav_Call_Control;
+/* Disable A/V in a groupchat.
+ *
+ * return 0 on success.
+ * return -1 on failure.
+ */
+int toxav_groupchat_disable_av(Tox *tox, uint32_t groupnumber);
+
+/* Return whether A/V is enabled in the groupchat.
+ */
+bool toxav_groupchat_av_enabled(Tox *tox, uint32_t groupnumber);
+
 
 /*******************************************************************************
  *
@@ -948,6 +1012,7 @@ typedef enum TOXAV_OPTIONS_OPTION {
     TOXAV_DECODER_VIDEO_BUFFER_MS = 13,
     TOXAV_CLIENT_VIDEO_CAPTURE_DELAY_MS = 14,
     TOXAV_CLIENT_INPUT_VIDEO_ORIENTATION = 15,
+    TOXAV_DECODER_VIDEO_ADD_DELAY_MS = 16,
 } TOXAV_OPTIONS_OPTION;
 
 
@@ -963,4 +1028,16 @@ bool toxav_option_set(ToxAV *av, uint32_t friend_number, TOXAV_OPTIONS_OPTION op
 #ifdef __cplusplus
 }
 #endif
+
+typedef void toxav_group_audio_cb(Tox *tox, uint32_t groupnumber, uint32_t peernumber, const int16_t *pcm,
+                                  uint32_t samples, uint8_t channels, uint32_t sample_rate, void *user_data);
+
+typedef TOXAV_ERR_CALL Toxav_Err_Call;
+typedef TOXAV_ERR_NEW Toxav_Err_New;
+typedef TOXAV_ERR_ANSWER Toxav_Err_Answer;
+typedef TOXAV_ERR_CALL_CONTROL Toxav_Err_Call_Control;
+typedef TOXAV_ERR_BIT_RATE_SET Toxav_Err_Bit_Rate_Set;
+typedef TOXAV_ERR_SEND_FRAME Toxav_Err_Send_Frame;
+typedef TOXAV_CALL_CONTROL Toxav_Call_Control;
+
 #endif // C_TOXCORE_TOXAV_TOXAV_H

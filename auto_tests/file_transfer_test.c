@@ -28,6 +28,8 @@ uint8_t *file_resume_mem_send = NULL;
 uint8_t *file_resume_mem_recv = NULL;
 uint64_t totalf_size = 0;
 
+long int random(void);
+
 static void accept_friend_request(Tox *m, const uint8_t *public_key, const uint8_t *data, size_t length, void *userdata)
 {
     if (length == 7 && memcmp("Gentoo", data, 7) == 0) {
@@ -808,7 +810,7 @@ static void file_transfer_test(void)
             printf("after %u iterations: %.2fKiB done\n", (unsigned int)i + 1, (double)size_recv / 1024);
         }
 
-        c_sleep(min_u32(tox1_interval, min_u32(tox2_interval, tox3_interval)));
+        c_sleep(200);
     }
 
     ck_assert_msg(file_sending_done, "file sending did not complete after %u iterations: sendf_ok:%u file_recv:%u "

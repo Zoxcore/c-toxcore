@@ -1,26 +1,11 @@
 %{
-/*
- * The Tox public API.
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright © 2016-2018 The TokTok team.
+ * Copyright © 2013 Tox project.
  */
 
 /*
- * Copyright © 2016-2018 The TokTok team.
- * Copyright © 2013 Tox project.
- *
- * This file is part of Tox, the free peer to peer instant messenger.
- *
- * Tox is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Tox is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Tox.  If not, see <http://www.gnu.org/licenses/>.
+ * The Tox public API.
  */
 #ifndef C_TOXCORE_TOXCORE_TOX_H
 #define C_TOXCORE_TOXCORE_TOX_H
@@ -182,7 +167,7 @@ const VERSION_MINOR                = 2;
  * The patch or revision number. Incremented when bugfixes are applied without
  * changing any functionality or API or ABI.
  */
-const VERSION_PATCH                = 8;
+const VERSION_PATCH                = 11;
 
 #define TOX_HAVE_TOXUTIL               1
 #define TOX_HAVE_TOXAV_CALLBACKS_002   1
@@ -646,6 +631,21 @@ static class options {
        * User data pointer passed to the logging callback.
        */
       any user_data;
+    }
+
+    /**
+     * These options are experimental, so avoid writing code that depends on
+     * them. Options marked "experimental" may change their behaviour or go away
+     * entirely in the future, or may be renamed to something non-experimental
+     * if they become part of the supported API.
+     */
+    namespace experimental {
+      /**
+       * Make public API functions thread-safe using a per-instance lock.
+       *
+       * Default: false.
+       */
+      bool thread_safety;
     }
   }
 
@@ -1401,7 +1401,7 @@ namespace friend {
      * Write the status message of the friend designated by the given friend number to a byte
      * array.
      *
-     * Call $size to determine the allocation size for the `status_name`
+     * Call $size to determine the allocation size for the `status_message`
      * parameter.
      *
      * The data written to `status_message` is equal to the data received by the last
@@ -2269,7 +2269,7 @@ namespace conference {
   /**
    * Creates a new conference.
    *
-   * This function creates a new text conference.
+   * This function creates and connects to a new text conference.
    *
    * @return conference number on success, or an unspecified value on failure.
    */
@@ -2316,7 +2316,10 @@ namespace conference {
   namespace peer {
 
     /**
-     * Return the number of peers in the conference. Return value is unspecified on failure.
+     * Return the number of online peers in the conference. The unsigned 
+     * integers less than this number are the valid values of peer_number for 
+     * the functions querying these peers. Return value is unspecified on 
+     * failure.
      */
     const uint32_t count(uint32_t conference_number)
         with error for peer_query;
@@ -2331,7 +2334,10 @@ namespace conference {
 
       /**
        * Copy the name of peer_number who is in conference_number to name.
-       * name must be at least $MAX_NAME_LENGTH long.
+       *
+       * Call $size to determine the allocation size for the `name` parameter.
+       *
+       * @param name A valid memory region large enough to store the peer's name.
        *
        * @return true on success.
        */
@@ -2361,7 +2367,9 @@ namespace conference {
   namespace offline_peer {
 
     /**
-     * Return the number of offline peers in the conference. Return value is unspecified on failure.
+     * Return the number of offline peers in the conference. The unsigned 
+     * integers less than this number are the valid values of offline_peer_number for 
+     * the functions querying these peers. Return value is unspecified on failure.
      */
     const uint32_t count(uint32_t conference_number)
         with error for peer_query;
@@ -2376,7 +2384,10 @@ namespace conference {
 
       /**
        * Copy the name of offline_peer_number who is in conference_number to name.
-       * name must be at least $MAX_NAME_LENGTH long.
+       *
+       * Call $size to determine the allocation size for the `name` parameter.
+       *
+       * @param name A valid memory region large enough to store the peer's name.
        *
        * @return true on success.
        */
@@ -2406,11 +2417,18 @@ namespace conference {
   }
 
   /**
+   * Set maximum number of offline peers to store, overriding the default.
+   */
+  bool set_max_offline(uint32_t conference_number, uint32_t max_offline_peers) {
+    /**
+     * The conference number passed did not designate a valid conference.
+     */
+    CONFERENCE_NOT_FOUND,
+  }
+
+
+  /**
    * Invites a friend to a conference.
-   *
-   * We must be connected to the conference, meaning that the conference has not
-   * been deleted, and either we created the conference with the $new function,
-   * or a `${event connected}` event has occurred for the conference.
    *
    * @param friend_number The friend number of the friend we want to invite.
    * @param conference_number The conference number of the conference we want to invite the friend to.
@@ -2435,6 +2453,14 @@ namespace conference {
 
   /**
    * Joins a conference that the client has been invited to.
+   *
+   * After successfully joining the conference, the client will not be "connected"
+   * to it until a handshaking procedure has been completed. A
+   * `${event connected}` event will then occur for the conference. The client
+   * will then remain connected to the conference until the conference is deleted,
+   * even across core restarts. Many operations on a conference will fail with a
+   * corresponding error if attempted on a conference to which the client is not
+   * yet connected.
    *
    * @param friend_number The friend number of the friend who sent the invite.
    * @param cookie Received via the `${event invite}` event.
@@ -2572,8 +2598,16 @@ namespace conference {
     size();
 
     /**
-     * Copy a list of valid conference IDs into the array chatlist. Determine how much space
-     * to allocate for the array with the `$size` function.
+     * Copy a list of valid conference numbers into the array chatlist. Determine
+     * how much space to allocate for the array with the `$size` function.
+     *
+     * Note that `${savedata.get}` saves all connected conferences;
+     * when toxcore is created from savedata in which conferences were saved, those
+     * conferences will be connected at startup, and will be listed by
+     * `$get`.
+     *
+     * The conference number of a loaded conference may differ from the conference
+     * number it had when it was saved.
      */
     get();
   }
@@ -2737,13 +2771,15 @@ namespace friend {
 
   event lossy_packet const {
     /**
+     * tox_callback_friend_lossy_packet is the compatibility function to
+     * set callback for all packet IDs except those reserved for ToxAV
+     *
      * @param friend_number The friend number of the friend who sent a lossy packet.
      * @param data A byte array containing the received packet data.
      * @param length The length of the packet data byte array.
      */
     typedef void(uint32_t friend_number, const uint8_t[length <= MAX_CUSTOM_PACKET_SIZE] data);
   }
-
 
   event lossless_packet const {
     /**
@@ -2865,6 +2901,7 @@ typedef TOX_ERR_FILE_SEND_CHUNK Tox_Err_File_Send_Chunk;
 typedef TOX_ERR_CONFERENCE_NEW Tox_Err_Conference_New;
 typedef TOX_ERR_CONFERENCE_DELETE Tox_Err_Conference_Delete;
 typedef TOX_ERR_CONFERENCE_PEER_QUERY Tox_Err_Conference_Peer_Query;
+typedef TOX_ERR_CONFERENCE_SET_MAX_OFFLINE Tox_Err_Conference_Set_Max_Offline;
 typedef TOX_ERR_CONFERENCE_BY_ID Tox_Err_Conference_By_Id;
 typedef TOX_ERR_CONFERENCE_BY_UID Tox_Err_Conference_By_Uid;
 typedef TOX_ERR_CONFERENCE_INVITE Tox_Err_Conference_Invite;
@@ -2882,6 +2919,24 @@ typedef TOX_LOG_LEVEL Tox_Log_Level;
 typedef TOX_CONNECTION Tox_Connection;
 typedef TOX_FILE_CONTROL Tox_File_Control;
 typedef TOX_CONFERENCE_TYPE Tox_Conference_Type;
+
+/**
+ * Set the callback for the `friend_lossy_packet` event for a specific packet ID.
+ * to Pass NULL to unset.
+ * You need to set to NULL first, only then you are allowed to change it
+ *
+ */
+void tox_callback_friend_lossy_packet_per_pktid(Tox *tox, tox_friend_lossy_packet_cb *callback, uint8_t pktid);
+
+/**
+ * Set the callback for the `friend_lossless_packet` event for a specific packet ID.
+ * to Pass NULL to unset.
+ *
+ */
+void tox_callback_friend_lossless_packet_per_pktid(Tox *tox, tox_friend_lossless_packet_cb *callback, uint8_t pktid);
+
+void tox_set_av_object(Tox *tox, void *object);
+void tox_get_av_object(const Tox *tox, void **object);
 
 #endif // C_TOXCORE_TOXCORE_TOX_H
 %}

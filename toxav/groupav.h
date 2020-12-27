@@ -1,21 +1,6 @@
-/*
+/* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright © 2016-2018 The TokTok team.
  * Copyright © 2014 Tox project.
- *
- * This file is part of Tox, the free peer to peer instant messenger.
- *
- * Tox is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Tox is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Tox.  If not, see <http://www.gnu.org/licenses/>.
  */
 #ifndef C_TOXCORE_TOXAV_GROUPAV_H
 #define C_TOXCORE_TOXAV_GROUPAV_H
@@ -34,7 +19,7 @@
 typedef void audio_data_cb(void *tox, uint32_t groupnumber, uint32_t peernumber, const int16_t *pcm,
                            uint32_t samples, uint8_t channels, uint32_t sample_rate, void *userdata);
 
-/* Create a new toxav group.
+/* Create and connect to a new toxav group.
  *
  * return group number on success.
  * return -1 on failure.
@@ -59,5 +44,23 @@ int join_av_groupchat(const Logger *log, Tox *tox, Group_Chats *g_c, uint32_t fr
 int group_send_audio(Group_Chats *g_c, uint32_t groupnumber, const int16_t *pcm, unsigned int samples, uint8_t channels,
                      uint32_t sample_rate);
 
+/* Enable A/V in a groupchat.
+ *
+ * return 0 on success.
+ * return -1 on failure.
+ */
+int groupchat_enable_av(const Logger *log, Tox *tox, Group_Chats *g_c, uint32_t groupnumber,
+                        audio_data_cb *audio_callback, void *userdata);
+
+/* Disable A/V in a groupchat.
+ *
+ * return 0 on success.
+ * return -1 on failure.
+ */
+int groupchat_disable_av(Group_Chats *g_c, uint32_t groupnumber);
+
+/* Return whether A/V is enabled in the groupchat.
+ */
+bool groupchat_av_enabled(Group_Chats *g_c, uint32_t groupnumber);
 
 #endif // C_TOXCORE_TOXAV_GROUPAV_H

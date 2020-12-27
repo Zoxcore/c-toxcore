@@ -1,21 +1,6 @@
-/*
+/* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright © 2016-2018 The TokTok team.
  * Copyright © 2013-2015 Tox project.
- *
- * This file is part of Tox, the free peer to peer instant messenger.
- *
- * Tox is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Tox is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Tox.  If not, see <http://www.gnu.org/licenses/>.
  */
 #ifndef C_TOXCORE_TOXAV_VIDEO_H
 #define C_TOXCORE_TOXAV_VIDEO_H
@@ -25,7 +10,6 @@
 
 #include "../toxcore/logger.h"
 #include "../toxcore/util.h"
-#include "../toxcore/Messenger.h"
 
 #include "bwcontroller.h"
 #include "ring_buffer.h"
@@ -59,17 +43,16 @@ VPX_DL_BEST_QUALITY   (0)       deadline parameter analogous to VPx BEST QUALITY
 
 #define AV_BUFFERING_MS_MIN 2
 #define AV_BUFFERING_MS_MAX 800
-#define MIN_AV_BUFFERING_MS 82
-#define AV_BUFFERING_DELTA_MS 1
 
 #ifdef HW_CODEC_CONFIG_RPI3_TBW_TV
 // more buffering for TV usecase
 #undef MIN_AV_BUFFERING_MS
 #undef AV_BUFFERING_DELTA_MS
-#define MIN_AV_BUFFERING_MS 300
+#define MIN_AV_BUFFERING_MS 90
 #define AV_BUFFERING_DELTA_MS 5
 #endif
 
+#define GUESS_REMOTE_ENCODER_DELAY_MS 100 // guess how long the remote end took to encode 1 video frame in ms
 
 typedef enum PACKET_TOXAV_COMM_CHANNEL_FUNCTION {
     PACKET_TOXAV_COMM_CHANNEL_REQUEST_KEYFRAME = 0,
@@ -114,16 +97,19 @@ typedef enum PACKET_TOXAV_COMM_CHANNEL_FUNCTION {
 
 // #define VIDEO_PTS_TIMESTAMPS 1
 
-#define VIDEO_SEND_X_KEYFRAMES_FIRST (10) // force the first n frames to be keyframes!
+#define VIDEO_SEND_X_KEYFRAMES_FIRST (1) // force the first n frames to be keyframes!
 #define VPX_MAX_DIST_START (100)
 
 
 #ifdef VIDEO_CODEC_ENCODER_USE_FRAGMENTS
-#define VIDEO_RINGBUFFER_BUFFER_ELEMENTS (8 * VIDEO_CODEC_FRAGMENT_NUMS) // this buffer has normally max. 1 entry
+#define VIDEO_RINGBUFFER_BUFFER_ELEMENTS (8 * VIDEO_CODEC_FRAGMENT_NUMS) // this buffer has normally max. ~2 entry
 #define VIDEO_RINGBUFFER_FILL_THRESHOLD (2 * VIDEO_CODEC_FRAGMENT_NUMS) // start decoding at lower quality
 #define VIDEO_RINGBUFFER_DROP_THRESHOLD (5 * VIDEO_CODEC_FRAGMENT_NUMS) // start dropping incoming frames (except index frames)
 #else
-#define VIDEO_RINGBUFFER_BUFFER_ELEMENTS (22) // this buffer has normally max. 1 entry
+// -------------------------------------
+//  can buffer ~ (VIDEO_RINGBUFFER_BUFFER_ELEMENTS * 40ms@25fps) --> can hold this much video data in ms for audio-to-video delay
+#define VIDEO_RINGBUFFER_BUFFER_ELEMENTS (142) // this buffer has normally max. ~2 entry
+// -------------------------------------
 #define VIDEO_RINGBUFFER_FILL_THRESHOLD (2) // start decoding at lower quality
 #define VIDEO_RINGBUFFER_DROP_THRESHOLD (5) // start dropping incoming frames (except index frames)
 #endif
@@ -145,11 +131,19 @@ typedef enum PACKET_TOXAV_COMM_CHANNEL_FUNCTION {
 #define VIDEO_DECODER_SOFT_DEADLINE_AUTOTUNE_ENTRIES 20
 #define VIDEO_ENCODER_SOFT_DEADLINE_AUTOTUNE_ENTRIES 20
 #define VIDEO_INCOMING_FRAMES_GAP_MS_ENTRIES 20
+#define VIDEO_DECODER_CAUSED_DELAY_MS_ENTRIES 20
+#define VIDEO_BUF_MS_ENTRIES 20
+#define VIDEO_BUF_MS_ENTRIES_LONG 200
 
 #include <pthread.h>
 
 struct TSBuffer;
 
+#ifndef TOXAV_DEFINED
+#define TOXAV_DEFINED
+#undef ToxAV
+typedef struct ToxAV ToxAV;
+#endif /* TOXAV_DEFINED */
 
 struct OMXContext;
 
@@ -169,6 +163,8 @@ typedef struct VCSession_s {
     AVPacket *h264_out_pic2;
 // ------ ffmpeg encoder ------
 
+    char *encoder_codec_used_name;
+    int x264_software_encoder_used;
 
 #ifdef RASPBERRY_PI_OMX
     struct OMXContext *omx_ctx;
@@ -205,6 +201,18 @@ typedef struct VCSession_s {
     uint32_t incoming_video_frames_gap_last_ts;
     uint32_t incoming_video_frames_gap_ms_mean_value;
 
+    uint32_t video_decoder_caused_delay_ms_array[VIDEO_DECODER_CAUSED_DELAY_MS_ENTRIES];
+    uint8_t video_decoder_caused_delay_ms_array_index;
+    uint32_t video_decoder_caused_delay_ms_mean_value;
+
+    uint32_t video_buf_ms_array[VIDEO_BUF_MS_ENTRIES];
+    uint8_t video_buf_ms_array_index;
+    int32_t video_buf_ms_mean_value;
+
+    uint32_t video_buf_ms_array_long[VIDEO_BUF_MS_ENTRIES_LONG];
+    uint8_t video_buf_ms_array_index_long;
+    int32_t video_buf_ms_mean_value_long;
+
     uint8_t send_keyframe_request_received;
     uint8_t h264_video_capabilities_received;
     uint8_t skip_fps;
@@ -212,9 +220,11 @@ typedef struct VCSession_s {
     uint32_t skip_fps_duration_until_ts;
     uint8_t skip_fps_counter;
 
-    int64_t timestamp_difference_to_sender;
+    int64_t timestamp_difference_to_sender__for_video;
     int64_t timestamp_difference_adjustment;
     uint32_t rountrip_time_ms;
+    int32_t has_rountrip_time_ms;
+    int32_t pinned_to_rountrip_time_ms;
     int32_t video_play_delay;
     int32_t video_play_delay_real;
     uint32_t video_frame_buffer_entries;
@@ -223,6 +233,7 @@ typedef struct VCSession_s {
     uint32_t parsed_h264_sps_profile_i;
     uint32_t parsed_h264_sps_level_i;
     uint32_t video_incoming_frame_orientation;
+    uint32_t video_received_first_frame;
 
     uint32_t dummy_ntp_local_start;
     uint32_t dummy_ntp_local_end;
@@ -251,10 +262,14 @@ typedef struct VCSession_s {
     int32_t startup_video_timespan;
     uint8_t encoder_frame_has_record_timestamp;
     int32_t video_decoder_buffer_ms;
-    int32_t video_decoder_adjustment_base_ms;
+    int32_t video_decoder_add_delay_ms;
     int32_t client_video_capture_delay_ms;
+    int32_t video_decoder_caused_delay_ms;
     int32_t remote_client_video_capture_delay_ms;
     int32_t video_encoder_frame_orientation_angle;
+    int32_t global_decode_first_frame_delayed_by;
+    uint64_t global_decode_first_frame_delayed_ms;
+    int32_t global_decode_first_frame_got;
     // options ---
 
     void *vpx_frames_buf_list[VIDEO_MAX_FRAGMENT_BUFFER_COUNT];
@@ -266,11 +281,16 @@ typedef struct VCSession_s {
     uint32_t incoming_video_bitrate_last_changed;
     uint32_t incoming_video_bitrate_last_cb_ts;
     uint32_t network_round_trip_time_last_cb_ts;
+    int32_t network_round_trip_adjustment;
     uint32_t last_requested_lower_fps_ts;
 
     /* Video frame receive callback */
     toxav_video_receive_frame_cb *vcb;
     void *vcb_user_data;
+    toxav_video_receive_frame_pts_cb *vcb_pts;
+    void *vcb_pts_user_data;
+    toxav_video_receive_frame_h264_cb *vcb_h264;
+    void *vcb_h264_user_data;
 
     pthread_mutex_t queue_mutex[1];
 } VCSession;
@@ -280,11 +300,12 @@ typedef struct VCSession_s {
 VCSession *vc_new(Mono_Time *mono_time, const Logger *log, ToxAV *av, uint32_t friend_number,
                   toxav_video_receive_frame_cb *cb, void *cb_data);
 void vc_kill(VCSession *vc);
-uint8_t vc_iterate(VCSession *vc, Messenger *m, uint8_t skip_video_flag, uint64_t *a_r_timestamp,
+uint8_t vc_iterate(VCSession *vc, Tox *tox, uint8_t skip_video_flag, uint64_t *a_r_timestamp,
                    uint64_t *a_l_timestamp,
                    uint64_t *v_r_timestamp, uint64_t *v_l_timestamp, BWController *bwc,
                    int64_t *timestamp_difference_adjustment_,
-                   int64_t *timestamp_difference_to_sender_);
+                   int64_t *timestamp_difference_to_sender_,
+                   int32_t *video_has_rountrip_time_ms);
 int vc_queue_message(Mono_Time *mono_time, void *vcp, struct RTPMessage *msg);
 int vc_reconfigure_encoder(Logger *log, VCSession *vc, uint32_t bit_rate, uint16_t width, uint16_t height,
                            int16_t kf_max_dist);

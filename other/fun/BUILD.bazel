@@ -1,3 +1,5 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
 cc_binary(
     name = "cracker",
     srcs = ["cracker.c"],
@@ -6,6 +8,14 @@ cc_binary(
         "@libsodium",
     ],
 )
+cc_binary(
+    name = "minimal-save-generator",
+    srcs = ["minimal-save-generator.c"],
+    deps = [
+        "@libsodium",
+    ],
+)
+
 
 cc_binary(
     name = "sign",

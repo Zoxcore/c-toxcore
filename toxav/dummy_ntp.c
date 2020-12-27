@@ -26,9 +26,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define DRIFT_MILLIS    2
+#define DRIFT_MILLIS    1
 
-bool dntp_drift(int64_t *current_offset, const int64_t new_offset, const int64_t max_offset_for_drift)
+bool dntp_drift(int64_t *current_offset, const int64_t new_offset, const int64_t max_offset_for_drift, const uint32_t jitter)
 {
     bool did_jump = false;
 
@@ -57,13 +57,15 @@ bool dntp_drift(int64_t *current_offset, const int64_t new_offset, const int64_t
             return did_jump;
         }
 
-        int64_t delta = 1;
+        if (abs_value > jitter)
+        {
+            int64_t delta = 1;
 
-        if (new_offset < *current_offset) {
-            delta = -1;
+            if (new_offset < *current_offset) {
+                delta = -1;
+            }
+            *current_offset = *current_offset + (delta * DRIFT_MILLIS);
         }
-
-        *current_offset = *current_offset + (delta * DRIFT_MILLIS);
     }
 
     return did_jump;
@@ -113,7 +115,7 @@ uint32_t dntp_calc_roundtrip_delay(uint32_t remote_tstart, uint32_t remote_tend,
     return roundtrip_delay;
 }
 
-#if UNIT_TESTING_ENABLED
+#if 0
 
 void unit_test()
 {

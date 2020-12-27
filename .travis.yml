@@ -2,12 +2,14 @@
 # For Pull Requests, we build only the first three jobs: autotools on Linux,
 # cmake on Linux, and cmake on Windows 32 bit.
 #
-# For branch builds and cron builds (once a day), we build all the jobs. This
-# is achieved using the "if: type IN (push, api, cron)" fields in the matrix.
+# For branch builds and cron builds (once a day), we build all the jobs. This is
+# achieved using the "if: type IN (push, api, cron)" fields in the jobs list.
 
 language: c
+dist: xenial
+os: linux
 
-matrix:
+jobs:
   include:
     - stage: "Stage 1"
       env: JOB=cmake-linux
@@ -16,14 +18,11 @@ matrix:
         apt:
           packages:
             - libconfig-dev          # For tox-bootstrapd.
-            - libcv-dev              # For av_test.
-            - libhighgui-dev         # For av_test.
-            - libopencv-contrib-dev  # For av_test.
             - libopus-dev            # For toxav.
-            - libsndfile1-dev        # For av_test.
+            - libsodium-dev          # For toxcore.
             - libgtest-dev           # For unit tests.
             - libvpx-dev             # For toxav.
-            - portaudio19-dev        # For av_test.
+            - ninja-build
             - pylint
       install:       .travis/$JOB install
       script:        .travis/$JOB script
@@ -40,29 +39,6 @@ matrix:
       install:       .travis/$JOB install
       script:        .travis/$JOB script
     - stage: "Stage 1"
-      env: JOB=bazel-linux
-      compiler: clang
-      addons:
-        apt:
-          packages:
-            - libcv-dev              # For av_test.
-            - libhighgui-dev         # For av_test.
-            - libopencv-contrib-dev  # For av_test.
-      before_install:
-        # Clear bazel installation.
-        - rm -rf $HOME/.cache/bazel/_bazel_$USER/install
-        # Get toktok-stack, which contains the bazel workspace.
-        - cd ..
-        - git clone https://github.com/TokTok/toktok-stack
-        - rm -rf toktok-stack/c-toxcore
-        - mv c-toxcore toktok-stack/
-        - cd toktok-stack/c-toxcore
-      install:       .travis/$JOB install
-      script:        .travis/$JOB script
-      before_cache:
-        # Clear bazel installation.
-        - rm -rf $HOME/.cache/bazel/_bazel_$USER/install
-    - stage: "Stage 1"
       if: type IN (push, api, cron)
       env: JOB=cmake-win32
       services: [docker]
@@ -77,7 +53,6 @@ matrix:
     - stage: "Stage 1"
       if: type IN (push, api, cron)
       env: JOB=cmake-freebsd
-      sudo: required
       install:       .travis/$JOB-stage1 install
       script:        .travis/$JOB-stage1 script
     - stage: "Stage 1"
@@ -94,7 +69,6 @@ matrix:
     - stage: "Stage 2"
       if: type IN (push, api, cron)
       env: JOB=cmake-freebsd
-      sudo: required
       install:       .travis/$JOB-stage2 install
       script:        .travis/$JOB-stage2 script
   fast_finish: true

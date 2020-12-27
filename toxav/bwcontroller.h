@@ -20,19 +20,24 @@
 #ifndef C_TOXCORE_TOXAV_BWCONTROLLER_H
 #define C_TOXCORE_TOXAV_BWCONTROLLER_H
 
-#include "../toxcore/Messenger.h"
+#include <stdint.h>
+#include <stdbool.h>
+
+#include "../toxcore/tox.h"
+#include "../toxcore/network.h"
+#include "../toxcore/mono_time.h"
 
 typedef struct BWController_s BWController;
 
 typedef void m_cb(BWController *bwc, uint32_t friend_number, float todo, void *user_data);
 
-BWController *bwc_new(Messenger *m, uint32_t friendnumber, m_cb *mcb, void *mcb_user_data);
+BWController *bwc_new(Tox *tox, Mono_Time *mono_time_given, uint32_t friendnumber, m_cb *mcb, void *mcb_user_data);
 
 void bwc_kill(BWController *bwc);
 
-void bwc_feed_avg(BWController *bwc, uint32_t bytes);
-void bwc_add_lost(BWController *bwc, uint32_t bytes_lost);
-void bwc_add_lost_v3(BWController *bwc, uint32_t bytes, bool force_update_now);
+void bwc_add_lost_v3(BWController *bwc, uint32_t bytes, bool dummy);
 void bwc_add_recv(BWController *bwc, uint32_t recv_bytes);
+void bwc_allow_receiving(Tox *tox);
+void bwc_stop_receiving(Tox *tox);
 
 #endif // C_TOXCORE_TOXAV_BWCONTROLLER_H

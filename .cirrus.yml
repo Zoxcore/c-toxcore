@@ -1,7 +1,7 @@
 ---
 cirrus-ci_task:
   container:
-    image: cirrusci/bazel:latest
+    image: l.gcr.io/google/bazel:2.2.0
     cpu: 8
     memory: 12G
   configure_script:
@@ -28,7 +28,9 @@ cirrus-ci_task:
     - cd .. && mv cirrus-ci-build c-toxcore
     - git clone --depth=1 https://github.com/TokTok/toktok-stack cirrus-ci-build
     - mv c-toxcore cirrus-ci-build
-    - cd -
+    - cd cirrus-ci-build
+    - tools/setup-ci
+    - bazel version
   test_all_script:
-    - bazel test -c opt -k //c-toxcore/...
-
+    - RUN_TEST="bazel test --copt=-DUSE_IPV6=0 -c opt -k //c-toxcore/..."
+    - $RUN_TEST || $RUN_TEST

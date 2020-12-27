@@ -45,13 +45,15 @@ This repository, although called `toxcore`, in fact contains several libraries b
 
 There are some programs that are not plugged into the CMake build system which you might find interesting. You would need to build those programs yourself. These programs reside in [`other/fun`](other/fun) directory.
 
-| Name                  | Type       | Dependencies         | Platform       | Description                                                                                                                                                            |
-|-----------------------|------------|----------------------|----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `bootstrap_node_info` | Script     | python3              | Cross-platform | Script for getting version and Message Of The Day (MOTD) information from a DHT bootstrap node.                                                                        |
-| `cracker`             | Executable | libnacl or libsodium | Cross-platform | Tries to find a curve25519 key pair, hex representation of the public key of which starts with the specified byte sequence.                                            |
-| `strkey`              | Executable | libsodium            | Cross-platform | Tries to find a curve25519 key pair, hex representation of the public key of which contains a specified byte pattern at the specified position or at any position.     |
-| `make-funny-savefile` | Script     | python               | Cross-platform | Generates Tox profile file (savedata file) with provided key pair. Useful for generating Tox profiles from the output of cracker or strkey programs.                   |
-| `sign`                | Executable | libsodium            | Cross-platform | Program for ed25519 file signing.                                                                                                                                      |
+| Name                     | Type       | Dependencies         | Platform       | Description                                                                                                                                                            |
+|--------------------------|------------|----------------------|----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `bootstrap_node_info`    | Script     | python3              | Cross-platform | Prints version and Message Of The Day (MOTD) information of a specified DHT bootstrap node.                                                                            |
+| `cracker`                | Executable | libnacl or libsodium | Cross-platform | Tries to find a curve25519 key pair, hex representation of the public key of which starts with a specified byte sequence.                                              |
+| `make-funny-savefile`    | Script     | python               | Cross-platform | Generates a Tox profile file (savedata file) with the provided key pair. Useful for generating Tox profiles from the output of cracker or strkey programs.             |
+| `minimal-save-generator` | Executable | libsodium            | Cross-platform | Generates a minimal Tox profile file (savedata file) with a random key pair.                                                                                           |
+| `save-generator`         | Executable | libtoxcore           | Cross-platform | Generates a Tox profile file (savedata file) with a random key pair using libtoxcore. Allows setting a name and adding friends.                                        |
+| `sign`                   | Executable | libsodium            | Cross-platform | Signs a file with a ed25519 key.                                                                                                                                       |
+| `strkey`                 | Executable | libsodium            | Cross-platform | Tries to find a curve25519 key pair, hex representation of the public key of which contains a specified byte pattern at a specified position or at any position.       |
 
 ## Building
 
@@ -85,7 +87,6 @@ There are some options that are available to configure the build.
 |------------------------|-----------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|---------------------------------------------------|
 | `AUTOTEST`             | Enable autotests (mainly for CI).                                                             | ON or OFF                                                                 | OFF                                               |
 | `BOOTSTRAP_DAEMON`     | Enable building of tox-bootstrapd, the DHT bootstrap node daemon. For Unix-like systems only. | ON or OFF                                                                 | ON                                                |
-| `BUILD_AV_TEST`        | Build toxav test.                                                                             | ON or OFF                                                                 | ON                                                |
 | `BUILD_MISC_TESTS`     | Build additional tests.                                                                       | ON or OFF                                                                 | OFF                                               |
 | `BUILD_TOXAV`          | Whether to build the tox AV library.                                                          | ON or OFF                                                                 | ON                                                |
 | `CMAKE_INSTALL_PREFIX` | Path to where everything should be installed.                                                 | Directory path.                                                           | Platform-dependent. Refer to CMake documentation. |
@@ -179,7 +180,7 @@ Build the container image based on the Dockerfile. The following options are ava
 | `SUPPORT_ARCH_x86_64` | Support building 64-bit toxcore.                               | "true" or "false" (case sensitive). | true          |
 | `SUPPORT_TEST`        | Support running toxcore automated tests.                       | "true" or "false" (case sensitive). | false         |
 | `VERSION_OPUS`        | Version of libopus to build toxcore with.                      | Git branch name.                    | v1.2.1        |
-| `VERSION_SODIUM`      | Version of libsodium to build toxcore with.                    | Git branch name.                    | 1.0.16        |
+| `VERSION_SODIUM`      | Version of libsodium to build toxcore with.                    | Git branch name.                    | 1.0.18        |
 | `VERSION_VPX`         | Version of libvpx to build toxcore with.                       | Git branch name.                    | v1.6.1        |
 
 Example of building a container image with options

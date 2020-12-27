@@ -30,7 +30,7 @@ set(CMAKE_MODULE_PATH ${toxcore_SOURCE_DIR}/cmake)
 # versions in a synchronised way.
 set(PROJECT_VERSION_MAJOR "0")
 set(PROJECT_VERSION_MINOR "2")
-set(PROJECT_VERSION_PATCH "8")
+set(PROJECT_VERSION_PATCH "11")
 set(PROJECT_VERSION "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}")
 
 # set .so library version / following libtool scheme
@@ -257,6 +257,7 @@ set(toxcore_API_HEADERS ${toxcore_API_HEADERS} ${toxcore_SOURCE_DIR}/toxcore/tox
 
 set(toxcore_SOURCES ${toxcore_SOURCES}
   toxutil/toxutil.c)
+set(toxcore_API_HEADERS ${toxcore_API_HEADERS} ${toxcore_SOURCE_DIR}/toxutil/toxutil.h^tox)
 
 if(BUILD_TOXAV)
   apidsl(toxav/toxav.api.h)
@@ -378,7 +379,7 @@ include(CompileGTest)
 # The actual unit tests follow.
 #
 unit_test(toxav ring_buffer)
-unit_test(toxav rtp)
+# unit_test(toxav rtp) # Zoff:disabled for now
 unit_test(toxcore crypto_core)
 unit_test(toxcore mono_time)
 unit_test(toxcore ping_array)
@@ -428,6 +429,7 @@ auto_test(TCP)
 auto_test(bootstrap)
 auto_test(conference)
 auto_test(conference_double_invite)
+auto_test(conference_invite_merge)
 auto_test(conference_peer_nick)
 auto_test(conference_simple)
 auto_test(conference_two)
@@ -465,8 +467,10 @@ auto_test(version)
 auto_test(save_compatibility)
 
 if(BUILD_TOXAV)
+  auto_test(conference_av)
   auto_test(toxav_basic)
   auto_test(toxav_many)
+  auto_test(toxav_many_sep_iter)
 endif()
 
 ################################################################################
@@ -521,24 +525,6 @@ endif()
 #
 ################################################################################
 
-option(BUILD_AV_TEST "Build toxav test" ON)
-if(NOT WIN32
-  AND BUILD_AV_TEST AND BUILD_TOXAV
-  AND SNDFILE_FOUND AND PORTAUDIO_FOUND AND OPENCV_FOUND)
-  add_executable(av_test ${CPUFEATURES}
-    testing/av_test.c)
-  target_link_modules(av_test
-    toxcore
-    ${OPENCV_LIBRARIES}
-    ${PORTAUDIO_LIBRARIES}
-    ${SNDFILE_LIBRARIES})
-  # Due to https://github.com/opencv/opencv/issues/6585, we need to compile
-  # av_test as C++ for newer OpenCV versions.
-  if(NOT OPENCV_VERSION VERSION_LESS 3)
-    set_source_files_properties(testing/av_test.c PROPERTIES LANGUAGE CXX)
-  endif()
-endif()
-
 option(BUILD_MISC_TESTS "Build additional tests" OFF)
 if (BUILD_MISC_TESTS)
   add_executable(DHT_test ${CPUFEATURES}
@@ -556,4 +542,7 @@ if (BUILD_MISC_TESTS)
   add_executable(save-generator
     other/fun/save-generator.c)
   target_link_modules(save-generator toxcore misc_tools)
+  add_executable(afl_toxsave
+    testing/afl_toxsave.c)
+  target_link_modules(afl_toxsave toxcore)
 endif()

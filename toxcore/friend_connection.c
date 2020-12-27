@@ -1,25 +1,10 @@
-/*
- * Connection to friends.
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright © 2016-2018 The TokTok team.
+ * Copyright © 2014 Tox project.
  */
 
 /*
- * Copyright © 2016-2018 The TokTok team.
- * Copyright © 2014 Tox project.
- *
- * This file is part of Tox, the free peer to peer instant messenger.
- *
- * Tox is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Tox is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Tox.  If not, see <http://www.gnu.org/licenses/>.
+ * Connection to friends.
  */
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -35,6 +20,8 @@
 #include "util.h"
 
 #define PORTS_PER_DISCOVERY 10
+
+extern bool global_force_udp_only_mode;
 
 typedef struct Friend_Conn_Callbacks {
     fc_status_cb *status_callback;
@@ -221,35 +208,42 @@ int getfriend_conn_id_pk(Friend_Connections *fr_c, const uint8_t *real_pk)
  */
 int friend_add_tcp_relay(Friend_Connections *fr_c, int friendcon_id, IP_Port ip_port, const uint8_t *public_key)
 {
-    Friend_Conn *const friend_con = get_conn(fr_c, friendcon_id);
+    if (!global_force_udp_only_mode)
+    {
+        Friend_Conn *const friend_con = get_conn(fr_c, friendcon_id);
 
-    if (!friend_con) {
+        if (!friend_con) {
+            return -1;
+        }
+
+        /* Local ip and same pk means that they are hosting a TCP relay. */
+        if (ip_is_local(ip_port.ip) && public_key_cmp(friend_con->dht_temp_pk, public_key) == 0) {
+            if (!net_family_is_unspec(friend_con->dht_ip_port.ip.family)) {
+                ip_port.ip = friend_con->dht_ip_port.ip;
+            } else {
+                friend_con->hosting_tcp_relay = 0;
+            }
+        }
+
+        const uint16_t index = friend_con->tcp_relay_counter % FRIEND_MAX_STORED_TCP_RELAYS;
+
+        for (unsigned i = 0; i < FRIEND_MAX_STORED_TCP_RELAYS; ++i) {
+            if (!net_family_is_unspec(friend_con->tcp_relays[i].ip_port.ip.family)
+                    && public_key_cmp(friend_con->tcp_relays[i].public_key, public_key) == 0) {
+                memset(&friend_con->tcp_relays[i], 0, sizeof(Node_format));
+            }
+        }
+
+        friend_con->tcp_relays[index].ip_port = ip_port;
+        memcpy(friend_con->tcp_relays[index].public_key, public_key, CRYPTO_PUBLIC_KEY_SIZE);
+        ++friend_con->tcp_relay_counter;
+
+        return add_tcp_relay_peer(fr_c->net_crypto, friend_con->crypt_connection_id, ip_port, public_key);
+    }
+    else
+    {
         return -1;
     }
-
-    /* Local ip and same pk means that they are hosting a TCP relay. */
-    if (ip_is_local(ip_port.ip) && public_key_cmp(friend_con->dht_temp_pk, public_key) == 0) {
-        if (!net_family_is_unspec(friend_con->dht_ip_port.ip.family)) {
-            ip_port.ip = friend_con->dht_ip_port.ip;
-        } else {
-            friend_con->hosting_tcp_relay = 0;
-        }
-    }
-
-    const uint16_t index = friend_con->tcp_relay_counter % FRIEND_MAX_STORED_TCP_RELAYS;
-
-    for (unsigned i = 0; i < FRIEND_MAX_STORED_TCP_RELAYS; ++i) {
-        if (!net_family_is_unspec(friend_con->tcp_relays[i].ip_port.ip.family)
-                && public_key_cmp(friend_con->tcp_relays[i].public_key, public_key) == 0) {
-            memset(&friend_con->tcp_relays[i], 0, sizeof(Node_format));
-        }
-    }
-
-    friend_con->tcp_relays[index].ip_port = ip_port;
-    memcpy(friend_con->tcp_relays[index].public_key, public_key, CRYPTO_PUBLIC_KEY_SIZE);
-    ++friend_con->tcp_relay_counter;
-
-    return add_tcp_relay_peer(fr_c->net_crypto, friend_con->crypt_connection_id, ip_port, public_key);
 }
 
 /* Connect to number saved relays for friend. */
@@ -275,55 +269,69 @@ static void connect_to_saved_tcp_relays(Friend_Connections *fr_c, int friendcon_
 
 static unsigned int send_relays(Friend_Connections *fr_c, int friendcon_id)
 {
-    Friend_Conn *const friend_con = get_conn(fr_c, friendcon_id);
+    if (!global_force_udp_only_mode)
+    {
+        Friend_Conn *const friend_con = get_conn(fr_c, friendcon_id);
 
-    if (!friend_con) {
+        if (!friend_con) {
+            return 0;
+        }
+
+        Node_format nodes[MAX_SHARED_RELAYS];
+        uint8_t data[1024];
+
+        const int n = copy_connected_tcp_relays(fr_c->net_crypto, nodes, MAX_SHARED_RELAYS);
+
+        for (int i = 0; i < n; ++i) {
+            /* Associated the relays being sent with this connection.
+               On receiving the peer will do the same which will establish the connection. */
+            friend_add_tcp_relay(fr_c, friendcon_id, nodes[i].ip_port, nodes[i].public_key);
+        }
+
+        int length = pack_nodes(data + 1, sizeof(data) - 1, nodes, n);
+
+        if (length <= 0) {
+            return 0;
+        }
+
+        data[0] = PACKET_ID_SHARE_RELAYS;
+        ++length;
+
+        if (write_cryptpacket(fr_c->net_crypto, friend_con->crypt_connection_id, data, length, 0) != -1) {
+            friend_con->share_relays_lastsent = mono_time_get(fr_c->mono_time);
+            return 1;
+        }
+
         return 0;
     }
-
-    Node_format nodes[MAX_SHARED_RELAYS];
-    uint8_t data[1024];
-
-    const int n = copy_connected_tcp_relays(fr_c->net_crypto, nodes, MAX_SHARED_RELAYS);
-
-    for (int i = 0; i < n; ++i) {
-        /* Associated the relays being sent with this connection.
-           On receiving the peer will do the same which will establish the connection. */
-        friend_add_tcp_relay(fr_c, friendcon_id, nodes[i].ip_port, nodes[i].public_key);
-    }
-
-    int length = pack_nodes(data + 1, sizeof(data) - 1, nodes, n);
-
-    if (length <= 0) {
-        return 0;
-    }
-
-    data[0] = PACKET_ID_SHARE_RELAYS;
-    ++length;
-
-    if (write_cryptpacket(fr_c->net_crypto, friend_con->crypt_connection_id, data, length, 0) != -1) {
-        friend_con->share_relays_lastsent = mono_time_get(fr_c->mono_time);
+    else
+    {
         return 1;
     }
-
-    return 0;
 }
 
 /* callback for recv TCP relay nodes. */
 static int tcp_relay_node_callback(void *object, uint32_t number, IP_Port ip_port, const uint8_t *public_key)
 {
-    Friend_Connections *fr_c = (Friend_Connections *)object;
-    const Friend_Conn *friend_con = get_conn(fr_c, number);
+    if (!global_force_udp_only_mode)
+    {
+        Friend_Connections *fr_c = (Friend_Connections *)object;
+        const Friend_Conn *friend_con = get_conn(fr_c, number);
 
-    if (!friend_con) {
+        if (!friend_con) {
+            return -1;
+        }
+
+        if (friend_con->crypt_connection_id != -1) {
+            return friend_add_tcp_relay(fr_c, number, ip_port, public_key);
+        }
+
+        return add_tcp_relay(fr_c->net_crypto, ip_port, public_key);
+    }
+    else
+    {
         return -1;
     }
-
-    if (friend_con->crypt_connection_id != -1) {
-        return friend_add_tcp_relay(fr_c, number, ip_port, public_key);
-    }
-
-    return add_tcp_relay(fr_c->net_crypto, ip_port, public_key);
 }
 
 static int friend_new_connection(Friend_Connections *fr_c, int friendcon_id);

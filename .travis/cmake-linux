@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 ACTION="$1"
 
@@ -7,22 +7,12 @@ set -eu
 CACHEDIR="$HOME/cache"
 NPROC=`nproc`
 ASTYLE="$CACHEDIR/astyle/build/gcc/bin/astyle"
-
-install_tool() {
-  SLUG="$1"
-  TOOL="$2"
-  TARGET="$3"
-
-  VERSION=$(curl -L -s -H 'Accept: application/json' \
-    "https://github.com/$SLUG/releases/latest" \
-    | egrep -o '"v[0-9][^"]+"' \
-    | egrep -o '[^"]+')
-  URL="https://github.com/$SLUG/releases/download/$VERSION/$TOOL-x86_64-linux-$VERSION.tar.gz"
-  curl -L -s "$URL" | tar xzv -C "$TARGET"
-}
+ASTYLE_VERSION=3.1
+TRAVIS_TOOL="https://raw.githubusercontent.com/TokTok/ci-tools/master/bin/travis-haskell"
 
 travis_install() {
-  install_tool TokTok/hs-tokstyle tokstyle "$HOME/.local"
+  bash <(curl -s "$TRAVIS_TOOL") download
+  travis-haskell download TokTok/hs-tokstyle tokstyle "$HOME/.local"
 
   which coveralls || {
     # Install cpp-coveralls to upload test coverage results.
@@ -35,20 +25,11 @@ travis_install() {
   }
 
   # Install astyle (version in ubuntu-precise too old).
-  [ -f "$ASTYLE" ] || {
-    wget -O ../astyle.tar.gz https://deb.debian.org/debian/pool/main/a/astyle/astyle_2.06.orig.tar.gz
+  ([ -f "$ASTYLE" ] && "$ASTYLE" --version | grep "$ASTYLE_VERSION" >/dev/null) || {
+    wget -O ../astyle.tar.gz "https://deb.debian.org/debian/pool/main/a/astyle/astyle_$ASTYLE_VERSION.orig.tar.gz"
     tar -xf ../astyle.tar.gz -C "$CACHEDIR"
+    make -C "$CACHEDIR/astyle/build/gcc" clean
     make -C "$CACHEDIR/astyle/build/gcc" "-j$NPROC"
-  }
-
-  # Install libsodium (not in ubuntu-precise).
-  [ -f "$CACHEDIR/lib/libsodium.a" ] || {
-    git clone --depth=1 --branch=stable https://github.com/jedisct1/libsodium ../libsodium
-    cd ../libsodium  # pushd
-    ./autogen.sh
-    ./configure --prefix="$CACHEDIR"
-    make install "-j$NPROC"
-    cd -  # popd
   }
 }
 
@@ -56,7 +37,7 @@ run_static_analysis() {
   pylint -E other/analysis/check_recursion
 
   export CPPFLAGS="-isystem $CACHEDIR/include"
-  export LDFLAGS="-L $CACHEDIR/lib"
+  export LDFLAGS="-L$CACHEDIR/lib"
   cat toxav/*.c toxcore/*.c toxencryptsave/*.c \
     | clang `pkg-config --cflags libsodium opus vpx` \
         -Itoxav -Itoxcore -Itoxencryptsave -S -emit-llvm -xc - -o- \
@@ -77,6 +58,7 @@ travis_script() {
   # Coverage flags.
   add_flag -fprofile-arcs -ftest-coverage
 
+  "$ASTYLE" --version
   other/astyle/format-source . "$ASTYLE"
 
   echo "Running TokTok style checker"
@@ -87,7 +69,7 @@ travis_script() {
 
   other/analysis/check_logger_levels
 
-  cmake -B_build -H. \
+  cmake -B_build -H. -GNinja \
     -DCMAKE_C_FLAGS="$C_FLAGS" \
     -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
     -DCMAKE_EXE_LINKER_FLAGS="$LD_FLAGS" \
@@ -100,8 +82,9 @@ travis_script() {
     -DUSE_IPV6=OFF \
     -DAUTOTEST=ON
 
+  cmake --build _build --parallel "$NPROC" --target install -- -k 0
+
   cd _build  # pushd
-  make "-j$NPROC" -k install
   ctest -j50 --output-on-failure || \
     ctest -j50 --output-on-failure --rerun-failed
   cd -  # popd

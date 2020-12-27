@@ -1,9 +1,10 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
 load("//tools:no_undefined.bzl", "cc_library")
 
 filegroup(
     name = "public_headers",
     srcs = ["tox.h"],
-    visibility = ["//c-toxcore:__pkg__"],
+    visibility = ["//c-toxcore:__subpackages__"],
 )
 
 cc_library(
@@ -63,7 +64,10 @@ cc_library(
     name = "mono_time",
     srcs = ["mono_time.c"],
     hdrs = ["mono_time.h"],
-    deps = [":ccompat"],
+    deps = [
+        ":ccompat",
+        "@pthread",
+    ],
 )
 
 cc_test(
@@ -278,4 +282,28 @@ cc_library(
         ":group",
         "//c-toxcore/toxencryptsave:defines",
     ],
+)
+
+CIMPLE_SRCS = glob(
+    [
+        "*.c",
+        "*.h",
+    ],
+    exclude = [
+        "*.api.h",
+        "ccompat.h",
+        "crypto_core_mem.c",
+        "ping_array.h",
+        "tox.h",
+        "tox_api.c",
+    ],
+)
+
+sh_test(
+    name = "cimple_test",
+    size = "small",
+    srcs = ["//hs-tokstyle/tools:check-cimple"],
+    args = ["$(location %s)" % f for f in CIMPLE_SRCS],
+    data = CIMPLE_SRCS,
+    tags = ["manual"],
 )

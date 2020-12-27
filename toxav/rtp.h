@@ -1,29 +1,15 @@
-/*
- * Copyright © 2016-2017 The TokTok team.
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright © 2016-2018 The TokTok team.
  * Copyright © 2013-2015 Tox project.
- *
- * This file is part of Tox, the free peer to peer instant messenger.
- *
- * Tox is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Tox is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Tox.  If not, see <http://www.gnu.org/licenses/>.
  */
 #ifndef C_TOXCORE_TOXAV_RTP_H
 #define C_TOXCORE_TOXAV_RTP_H
 
 #include "bwcontroller.h"
 
-#include "../toxcore/Messenger.h"
+#include "../toxcore/tox.h"
 #include "../toxcore/logger.h"
+#include "../toxcore/net_crypto.h"
 
 #include <stdbool.h>
 
@@ -43,7 +29,10 @@ extern "C" {
  * Number of 32 bit padding fields between \ref RTPHeader::offset_lower and
  * everything before it.
  */
-#define RTP_PADDING_FIELDS 5
+#define RTP_PADDING_FIELDS 4
+
+#define PACKET_LOSSLESS_VIDEO 171 // DO NOT USE THIS! only for debugging!
+#define PACKET_TOXAV_COMM_CHANNEL 172
 
 /**
  * Payload type identifier. Also used as rtp callback prefix.
@@ -53,6 +42,11 @@ typedef enum RTP_Type {
     RTP_TYPE_VIDEO = 193,
 } RTP_Type;
 
+#ifndef TOXAV_DEFINED
+#define TOXAV_DEFINED
+#undef ToxAV
+typedef struct ToxAV ToxAV;
+#endif /* TOXAV_DEFINED */
 
 enum {
     video_frame_type_NORMALFRAME = 0,
@@ -60,7 +54,7 @@ enum {
 };
 
 
-#define USED_RTP_WORKBUFFER_COUNT 10
+#define USED_RTP_WORKBUFFER_COUNT 3
 #define VIDEO_FRAGMENT_NUM_NO_FRAG (-1)
 
 
@@ -161,6 +155,7 @@ struct RTPHeader {
     uint32_t real_frame_num; /* unused for now */
     uint32_t encoder_bit_rate_used; /* what was the encoder bit rate used to encode this frame */
     uint32_t client_video_capture_delay_ms; /* how long did the client take to capture a video frame in ms */
+    uint32_t rtp_packet_number; /* rtp packet number */
     // ---------------------------- //
     //      custom fields here      //
     // ---------------------------- //
@@ -201,7 +196,7 @@ struct RTPMessage {
 struct RTPWorkBuffer {
     /**
      * Whether this slot contains a key frame. This is true iff
-     * buf->header.flags & RTP_KEY_FRAME.
+     * `buf->header.flags & RTP_KEY_FRAME`.
      */
     bool is_keyframe;
     /**
@@ -234,6 +229,7 @@ typedef struct RTPSession {
     uint16_t sequnum;      /* Sending sequence number */
     uint16_t rsequnum;     /* Receiving sequence number */
     uint32_t rtimestamp;
+    uint32_t rtp_packet_num;
     uint32_t ssrc; //  this seems to be unused!?
     struct RTPMessage *mp; /* Expected parted message */
     struct RTPWorkBufferList *work_buffer_list;
@@ -242,13 +238,17 @@ typedef struct RTPSession {
     int64_t incoming_packets_ts_last_ts;
     uint16_t incoming_packets_ts_index;
     uint32_t incoming_packets_ts_average;
-    Messenger *m;
+    Tox *tox;
+    ToxAV *toxav;
     uint32_t friend_number;
+    bool rtp_receive_active;
     BWController *bwc;
     void *cs;
     rtp_m_cb *mcb;
 } RTPSession;
 
+
+void handle_rtp_packet(Tox *tox, uint32_t friendnumber, const uint8_t *data, size_t length, void *object);
 
 /**
  * Serialise an RTPHeader to bytes to be sent over the network.
@@ -268,11 +268,13 @@ size_t rtp_header_pack(uint8_t *rdata, const struct RTPHeader *header);
  */
 size_t rtp_header_unpack(const uint8_t *data, struct RTPHeader *header);
 
-RTPSession *rtp_new(int payload_type, Messenger *m, uint32_t friendnumber,
+RTPSession *rtp_new(int payload_type, Tox *tox, ToxAV *toxav, uint32_t friendnumber,
                     BWController *bwc, void *cs, rtp_m_cb *mcb);
-void rtp_kill(RTPSession *session);
-int rtp_allow_receiving(RTPSession *session);
-int rtp_stop_receiving(RTPSession *session);
+void rtp_kill(Tox *tox, RTPSession *session);
+void rtp_allow_receiving_mark(Tox *tox, RTPSession *session);
+void rtp_stop_receiving_mark(Tox *tox, RTPSession *session);
+void rtp_allow_receiving(Tox *tox);
+void rtp_stop_receiving(Tox *tox);
 /**
  * Send a frame of audio or video data, chunked in \ref RTPMessage instances.
  *

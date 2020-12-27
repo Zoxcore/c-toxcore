@@ -22,29 +22,53 @@
 #define DISABLE_H264_DECODER_FEATURE    0
 
 // H264 settings -----------
-#define VIDEO_BITRATE_INITIAL_VALUE_H264 1500
+#define VIDEO_BITRATE_INITIAL_VALUE_H264 180
 #define VIDEO_BITRATE_MIN_AUTO_VALUE_H264 95
 #define VIDEO_BITRATE_SCALAR_AUTO_VALUE_H264 1400
-#define VIDEO_BITRATE_SCALAR_INC_BY_AUTO_VALUE_H264 200
+#define VIDEO_BITRATE_SCALAR_INC_BY_AUTO_VALUE_H264 20
 #define VIDEO_BITRATE_SCALAR2_AUTO_VALUE_H264 5000
 #define VIDEO_BITRATE_SCALAR2_INC_BY_AUTO_VALUE_H264 15
 #define VIDEO_BITRATE_SCALAR3_AUTO_VALUE_H264 7000
-#define VIDEO_BITRATE_MAX_AUTO_VALUE_H264 8000
+
+#define VIDEO_BITRATE_SCALAR_DEC_BY_AUTO_VALUE_H264 60
+
+// default max video bitrate
+#define VIDEO_BITRATE_MAX_AUTO_VALUE_H264 2700
 
 #ifdef HW_CODEC_CONFIG_RPI3_TBW_BIDI
-    // lower max video bitrate on ToxPhone
-    #undef VIDEO_BITRATE_MAX_AUTO_VALUE_H264
-    #define VIDEO_BITRATE_MAX_AUTO_VALUE_H264 3100
+// max video bitrate on ToxPhone
+#undef VIDEO_BITRATE_MAX_AUTO_VALUE_H264
+#define VIDEO_BITRATE_MAX_AUTO_VALUE_H264 2700
 #endif
 
+#ifdef HW_CODEC_CONFIG_UTOX_LINNVENC
+// max video bitrate for ToxTV
+#undef VIDEO_BITRATE_MAX_AUTO_VALUE_H264
+#define VIDEO_BITRATE_MAX_AUTO_VALUE_H264 6000
+
+#undef VIDEO_BITRATE_INITIAL_VALUE_H264
+#define VIDEO_BITRATE_INITIAL_VALUE_H264 180
+#endif
+
+#ifdef HW_CODEC_CONFIG_HIGHVBITRATE
+// max video bitrate for TV
+#undef VIDEO_BITRATE_MAX_AUTO_VALUE_H264
+#define VIDEO_BITRATE_MAX_AUTO_VALUE_H264 6000
+
+#undef VIDEO_BITRATE_INITIAL_VALUE_H264
+#define VIDEO_BITRATE_INITIAL_VALUE_H264 300
+#endif
+
+
+
 // -- these control how agressive the bandwidth control is --
-#define VIDEO_BITRATE_AUTO_INC_THRESHOLD 1.7 // threshold loss % to increase bitrate (in %/100)
-#define VIDEO_BITRATE_AUTO_DEC_THRESHOLD 5.1 // threshold loss % to lower the bitrate (in %/100)
-#define VIDEO_BITRATE_AUTO_INC_TO 1.05 // increase video bitrate by n% (in %/100)
-#define VIDEO_BITRATE_AUTO_DEC_FACTOR 0.93 // (in %/100)
+#define VIDEO_BITRATE_AUTO_INC_THRESHOLD 1.1 // threshold loss % to increase bitrate (in %)
+#define VIDEO_BITRATE_AUTO_DEC_THRESHOLD 2.8 // threshold loss % to lower the bitrate (in %)
+#define VIDEO_BITRATE_AUTO_INC_TO 1.02 // increase video bitrate by n%
+#define VIDEO_BITRATE_AUTO_DEC_FACTOR 0.93 //
 // -- these control how agressive the bandwidth control is --
 
-#define VIDEO_MAX_KF_H264 200
+#define VIDEO_MAX_KF_H264 60
 #define VIDEO_BUF_FACTOR_H264 1
 #define VIDEO_F_RATE_TOLERANCE_H264 1.3
 #define VIDEO_BITRATE_FACTOR_H264 0.7
@@ -79,6 +103,7 @@ typedef struct ToxAVCall_s {
 
     uint32_t audio_bit_rate; /* Sending audio bit rate */
     uint32_t video_bit_rate; /* Sending video bit rate */
+    uint32_t video_bit_rate_not_yet_set;
     uint32_t video_bit_rate_last_last_changed; // only for callback info
     uint32_t video_bit_rate_last_last_changed_cb_ts;
 
@@ -90,7 +115,8 @@ typedef struct ToxAVCall_s {
 
     int64_t call_timestamp_difference_to_sender;
     int64_t call_timestamp_difference_adjustment;
-    uint32_t call_rountrip_time_ms;
+    // uint32_t call_rountrip_time_ms;
+    int32_t call_video_has_rountrip_time_ms;
 
     uint64_t reference_rtimestamp;
     uint64_t reference_ltimestamp;
@@ -100,7 +126,7 @@ typedef struct ToxAVCall_s {
     /** Required for monitoring changes in states */
     uint8_t previous_self_capabilities;
 
-    pthread_mutex_t mutex[1];
+    pthread_mutex_t toxav_call_mutex[1];
 
     struct ToxAVCall_s *prev;
     struct ToxAVCall_s *next;
@@ -109,7 +135,6 @@ typedef struct ToxAVCall_s {
 
 struct ToxAV {
     Tox *tox;
-    Messenger *m;
     MSISession *msi;
 
     bool toxav_audio_iterate_seperation_active;
@@ -132,9 +157,15 @@ struct ToxAV {
     /* Audio frame receive callback */
     toxav_audio_receive_frame_cb *acb;
     void *acb_user_data;
+    toxav_audio_receive_frame_pts_cb *acb_pts;
+    void *acb_pts_user_data;
     /* Video frame receive callback */
     toxav_video_receive_frame_cb *vcb;
     void *vcb_user_data;
+    toxav_video_receive_frame_pts_cb *vcb_pts;
+    void *vcb_pts_user_data;
+    toxav_video_receive_frame_h264_cb *vcb_h264;
+    void *vcb_h264_user_data;
     /* Bit rate control callback */
     toxav_bit_rate_status_cb *bcb;
     void *bcb_user_data;
@@ -151,5 +182,7 @@ struct ToxAV {
     int32_t dmssa; /** Average decoding time in ms */
 
     uint32_t interval; /** Calculated interval */
+
+    Mono_Time *toxav_mono_time; // ToxAV's own mono_time instance
 };
 

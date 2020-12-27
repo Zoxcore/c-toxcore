@@ -1,24 +1,9 @@
-/*
+/* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright © 2016-2018 The TokTok team.
  * Copyright © 2013 Tox project.
  * Copyright © 2013 plutooo
- *
- * This file is part of Tox, the free peer to peer instant messenger.
- * This file is donated to the Tox Project.
- *
- * Tox is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Tox is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Tox.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include "../toxcore/ccompat.h"
 #include "ring_buffer.h"
 
 #include <stdlib.h>
@@ -47,7 +32,7 @@ bool rb_empty(const RingBuffer *b)
  */
 void *rb_write(RingBuffer *b, void *p, uint64_t data_type_)
 {
-    void *rc = NULL;
+    void *rc = nullptr;
 
     if ((b->end + 1) % b->size == b->start) { /* full */
         rc = b->data[b->start];
@@ -67,7 +52,7 @@ void *rb_write(RingBuffer *b, void *p, uint64_t data_type_)
 bool rb_read(RingBuffer *b, void **p, uint64_t *data_type_)
 {
     if (b->end == b->start) { /* Empty */
-        *p = NULL;
+        *p = nullptr;
         return false;
     }
 
@@ -83,20 +68,21 @@ RingBuffer *rb_new(int size)
     RingBuffer *buf = (RingBuffer *)calloc(sizeof(RingBuffer), 1);
 
     if (!buf) {
-        return NULL;
+        return nullptr;
     }
 
     buf->size = size + 1; /* include empty elem */
+    buf->data = (void **)calloc(buf->size, sizeof(void *));
 
-    if (!(buf->data = (void **)calloc(buf->size, sizeof(void *)))) {
+    if (!buf->data) {
         free(buf);
-        return NULL;
+        return nullptr;
     }
 
     if (!(buf->type = (uint64_t *)calloc(buf->size, sizeof(uint64_t)))) {
         free(buf->data);
         free(buf);
-        return NULL;
+        return nullptr;
     }
 
     return buf;
@@ -127,7 +113,7 @@ uint16_t rb_data(const RingBuffer *b, void **dest)
 {
     uint16_t i = 0;
 
-    for (; i < rb_size(b); i++) {
+    for (; i < rb_size(b); ++i) {
         dest[i] = b->data[(b->start + i) % b->size];
     }
 
