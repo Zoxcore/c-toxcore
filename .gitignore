@@ -58,10 +58,14 @@ libtool
 .deps
 .libs
 .dirstamp
+build/
 
 #kdevelop
 .kdev/
 *.kdev*
+
+# VScode
+.vscode/
 
 # Netbeans
 nbproject
